@@ -1,0 +1,418 @@
+import type { BikeModels, LibraryEntry, Loadout } from "../types";
+import type { TKey } from "../i18n";
+import {
+  scanLibrary,
+  scanRiderTargets,
+  scanModelSwaps,
+  EMPTY_RIDER_TARGETS,
+  STOCK_RIDER_PROFILES,
+} from "../api/mods";
+
+export interface SlotDef {
+  key: keyof Loadout;
+  /** Translation key — resolved with `t()` at render. */
+  label: TKey;
+  group: "bike" | "rider" | "head" | "body";
+  /** Which other slot this slot's options depend on (for dependent dropdowns). */
+  dependsOn?: "bikeid" | "helmet" | "boots" | "protection" | "rider";
+  /** Free-text slot (fonts) — no installed source to enumerate. */
+  freeText?: boolean;
+}
+
+export const SLOTS: SlotDef[] = [
+  { key: "paint", label: "slot.paint", group: "bike", dependsOn: "bikeid" },
+  { key: "modelSwap", label: "slot.modelSwap", group: "bike", dependsOn: "bikeid" },
+  { key: "bikeFont", label: "slot.bikeFont", group: "bike", freeText: true },
+  { key: "tyres", label: "slot.tyres", group: "bike" },
+  { key: "rider", label: "slot.rider", group: "rider" },
+  { key: "suitPaint", label: "slot.suitPaint", group: "rider", dependsOn: "rider" },
+  { key: "suitFont", label: "slot.suitFont", group: "rider", freeText: true },
+  { key: "glovesPaint", label: "slot.glovesPaint", group: "rider" },
+  { key: "ridingStyle", label: "slot.ridingStyle", group: "rider" },
+  { key: "helmet", label: "slot.helmet", group: "head" },
+  { key: "helmetPaint", label: "slot.helmetPaint", group: "head", dependsOn: "helmet" },
+  { key: "gogglesPaint", label: "slot.gogglesPaint", group: "head", dependsOn: "helmet" },
+  { key: "boots", label: "slot.boots", group: "body" },
+  { key: "bootsPaint", label: "slot.bootsPaint", group: "body", dependsOn: "boots" },
+  { key: "protection", label: "slot.protection", group: "body" },
+  {
+    key: "protectionPaint",
+    label: "slot.protectionPaint",
+    group: "body",
+    dependsOn: "protection",
+  },
+];
+
+/**
+ * The `profile.ini` section a slot reads and writes, or `null` for a slot that isn't in
+ * the file at all. `modelSwap` is the only one: it's a filesystem swap under
+ * `mods/bikes`, performed at apply time.
+ *
+ * Slot keys are the camelCase `Loadout` fields and the sections are their snake_case
+ * originals, so this is a mechanical conversion rather than a table to keep in sync.
+ */
+export function slotSection(key: SlotDef["key"]): string | null {
+  if (key === "modelSwap") return null;
+  return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+}
+
+/**
+ * The slots a profile actually offers, given the sections its `profile.ini` carries.
+ *
+ * GP Bikes has no goggles, boots or protection — it bakes them into the rider model — so
+ * rendering the full MX Bikes list there would show pickers that write nothing. An empty
+ * or missing `sections` keeps every slot, so a failed read degrades to the old behaviour
+ * rather than to an empty editor.
+ */
+export function slotsFor(sections: string[] | null | undefined): SlotDef[] {
+  if (!sections?.length) return SLOTS;
+  const have = new Set(sections.map((s) => s.toLowerCase()));
+  return SLOTS.filter((s) => {
+    const section = slotSection(s.key);
+    return section === null || have.has(section);
+  });
+}
+
+export const SLOT_GROUPS: { id: SlotDef["group"]; label: TKey }[] = [
+  { id: "bike", label: "slotGroup.bike" },
+  { id: "rider", label: "slotGroup.rider" },
+  { id: "head", label: "slotGroup.head" },
+  { id: "body", label: "slotGroup.body" },
+];
+
+export const EMPTY_LOADOUT: Loadout = {
+  paint: "",
+  bikeFont: "",
+  rider: "",
+  helmet: "",
+  helmetPaint: "",
+  gogglesPaint: "",
+  suitPaint: "",
+  suitFont: "",
+  boots: "",
+  bootsPaint: "",
+  glovesPaint: "",
+  protection: "",
+  protectionPaint: "",
+  ridingStyle: "",
+  tyres: "",
+  raceNumber: "",
+  modelSwap: "",
+};
+
+/** Built-in values the game always accepts even with no installed mod. */
+const BUILTINS: Partial<Record<keyof Loadout, string[]>> = {
+  helmet: ["default"],
+  boots: ["default"],
+  protection: ["full", "neck"],
+  // The two rider bodies the game ships. They live in `rider.pkz` and leave nothing on
+  // disk, so the scan can only see one of them once you've installed a kit under it —
+  // which left the supermoto rider unpickable.
+  rider: [...STOCK_RIDER_PROFILES],
+  bikeFont: ["default_black", "default_white"],
+  suitFont: ["default_white", "default_black"],
+  // The two styles the game ships. Like the stock rider bodies they live in `rider.pkz`
+  // and leave nothing on disk, so no scan can see them — installed styles come from
+  // `mods/rider/animations` and join these in `slotOptions`.
+  ridingStyle: ["mx", "sm"],
+  tyres: ["p_mx"],
+};
+
+/**
+ * Bucket key for paints installed without an owning model folder — a loose `.pnt`
+ * dropped straight into `mods/rider/boots` belongs to no model, so it's offered for
+ * every model rather than discarded.
+ */
+export const ANY_MODEL = "*";
+
+export interface Scans {
+  bikePaints: Record<string, string[]>; // bikeid → livery names
+  modelSwaps: Record<string, string[]>; // bikeid → model-swap variant names
+  activeModel: Record<string, string>; // bikeid → the model swap currently on the bike
+  /** bikeid → variant name → the liveries that variant claims. See {@link forPickedModel}. */
+  modelPaints: Record<string, Record<string, string[]>>;
+  helmets: string[];
+  helmetPaints: Record<string, string[]>; // helmet model (or ANY_MODEL) → paints
+  goggles: Record<string, string[]>; // helmet model / rider profile → goggles
+  boots: string[];
+  bootPaints: Record<string, string[]>; // boots model (or ANY_MODEL) → paints
+  protection: string[];
+  protectionPaints: Record<string, string[]>; // protection model (or ANY_MODEL) → paints
+  gloves: string[];
+  outfits: Record<string, string[]>; // rider profile → kit paints
+  riderProfiles: string[];
+  ridingStyles: string[]; // installed `mods/rider/animations` styles
+  tyres: string[];
+}
+
+function stripExt(name: string): string {
+  return name.replace(/\.(pnt|pkz|zip)$/i, "");
+}
+
+function push(map: Record<string, string[]>, key: string, val: string) {
+  (map[key] ??= []).push(val);
+}
+
+export async function loadScans(): Promise<Scans> {
+  const [bikes, rider, tyres, targets, swaps] = await Promise.all([
+    scanLibrary("mods/bikes").catch(() => [] as LibraryEntry[]),
+    scanLibrary("mods/rider").catch(() => [] as LibraryEntry[]),
+    scanLibrary("mods/tyres").catch(() => [] as LibraryEntry[]),
+    scanRiderTargets().catch(
+      () => EMPTY_RIDER_TARGETS,
+    ),
+    scanModelSwaps().catch(() => [] as BikeModels[]),
+  ]);
+
+  const s: Scans = {
+    bikePaints: {},
+    modelSwaps: {},
+    activeModel: {},
+    modelPaints: {},
+    helmets: [...targets.helmets],
+    helmetPaints: {},
+    goggles: {},
+    boots: [...targets.boots],
+    bootPaints: {},
+    protection: [...targets.protection],
+    protectionPaints: {},
+    gloves: [],
+    outfits: {},
+    riderProfiles: [...targets.profiles],
+    ridingStyles: [...targets.animations],
+    tyres: [],
+  };
+
+  for (const e of bikes) {
+    if (e.category === "bikePaint" && e.parent) push(s.bikePaints, e.parent, stripExt(e.name));
+  }
+  for (const b of swaps) {
+    // Only offer sets that can actually be applied — an incomplete one (files but no
+    // mesh) is rejected by the backend, so offering it only produces a failed apply.
+    const usable = b.variants.filter((v) => v.valid || v.empty).map((v) => v.name);
+    if (usable.length) s.modelSwaps[b.bike] = usable;
+    s.activeModel[b.bike] = b.active;
+    // Every variant's claim, not just the active one's — a livery claimed by *any* model
+    // is one the others shouldn't offer.
+    s.modelPaints[b.bike] = Object.fromEntries(b.variants.map((v) => [v.name, v.paints]));
+  }
+  for (const e of rider) {
+    const v = stripExt(e.name);
+    switch (e.category) {
+      case "helmetPaint":
+        push(s.helmetPaints, e.parent ?? ANY_MODEL, v);
+        break;
+      case "goggles":
+        push(s.goggles, e.parent ?? ANY_MODEL, v);
+        break;
+      case "bootPaint":
+        push(s.bootPaints, e.parent ?? ANY_MODEL, v);
+        break;
+      case "protectionPaint":
+        push(s.protectionPaints, e.parent ?? ANY_MODEL, v);
+        break;
+      case "gloves":
+        s.gloves.push(v);
+        break;
+      case "outfit":
+        if (e.parent) push(s.outfits, e.parent, v);
+        break;
+    }
+  }
+  for (const e of tyres) s.tyres.push(stripExt(e.name));
+
+  const tidy = (a: string[]) => [...new Set(a)].sort((x, y) => x.localeCompare(y));
+  s.helmets = tidy(s.helmets);
+  s.boots = tidy(s.boots);
+  s.protection = tidy(s.protection);
+  s.gloves = tidy(s.gloves);
+  s.riderProfiles = tidy(s.riderProfiles);
+  s.ridingStyles = tidy(s.ridingStyles);
+  s.tyres = tidy(s.tyres);
+  for (const m of [s.bikePaints, s.helmetPaints, s.goggles, s.bootPaints, s.protectionPaints, s.outfits])
+    for (const k of Object.keys(m)) m[k] = tidy(m[k]);
+
+  return s;
+}
+
+/**
+ * Look a bike up in a scan map. The scans key on the on-disk folder name while the slot
+ * asks by the `bikeid` written in `profile.ini`; those agree in case only by convention,
+ * and an exact match silently yielded an empty dropdown whenever they didn't.
+ */
+function byBike<T>(map: Record<string, T>, bikeid: string): T | undefined {
+  if (map[bikeid] !== undefined) return map[bikeid];
+  const hit = Object.keys(map).find((k) => k.toLowerCase() === bikeid.toLowerCase());
+  return hit === undefined ? undefined : map[hit];
+}
+
+function forBike(map: Record<string, string[]>, bikeid: string): string[] {
+  return byBike(map, bikeid) ?? [];
+}
+
+/**
+ * The model swap a loadout puts on `bikeid`: its own pick, else whatever is on the bike.
+ *
+ * An empty `modelSwap` slot means *leave the model alone*, so the answer is the variant
+ * currently loose at the bike's root — never `"Stock"`, which is the packed model those
+ * loose files are hiding, and a different bike whenever a swap is applied.
+ */
+export function pickedModel(bikeid: string, loadout: Loadout, scans: Scans | null): string {
+  if (!scans) return loadout.modelSwap;
+  return loadout.modelSwap || byBike(scans.activeModel, bikeid) || "";
+}
+
+/**
+ * Narrow a bike's liveries to the ones that suit the model the preset puts on it: the
+ * liveries that model claims, plus the ones no model claims at all.
+ *
+ * A bike wears one model at a time but its liveries all share the single `paints/` folder
+ * the game insists on, so a Yami mesh on a KTM otherwise offers every KTM livery too. The
+ * model that matters is the one *this preset* selects — a preset pairs a model with the
+ * livery drawn for it — falling back to whatever is on the bike when the preset leaves the
+ * model alone. Unclaimed liveries staying universal is the same rule {@link forModel}
+ * applies to gear paints installed without an owning model, and it means a bike nobody has
+ * assigned anything on behaves exactly as before.
+ */
+function forPickedModel(
+  liveries: string[],
+  bikeid: string,
+  loadout: Loadout,
+  scans: Scans,
+): string[] {
+  const claims = byBike(scans.modelPaints, bikeid);
+  if (!claims) return liveries;
+  const model = pickedModel(bikeid, loadout, scans);
+  const keyed = (name: string) =>
+    Object.entries(claims).find(([v]) => v.toLowerCase() === name.toLowerCase())?.[1] ?? [];
+
+  const lower = (names: string[]) => new Set(names.map((n) => n.toLowerCase()));
+  const mine = lower(keyed(model));
+  const spokenFor = lower(Object.values(claims).flat());
+  return liveries.filter((l) => mine.has(l.toLowerCase()) || !spokenFor.has(l.toLowerCase()));
+}
+
+/** Paints for `model`, plus any installed with no owning model folder. */
+function forModel(map: Record<string, string[]>, model: string): string[] {
+  return [...(map[model] ?? []), ...(map[ANY_MODEL] ?? [])];
+}
+
+/**
+ * Per-profile assets for `profile` — or, with no rider profile picked yet, everything
+ * installed across profiles, so the slot isn't mysteriously empty on a fresh Rider tab.
+ */
+function forProfile(map: Record<string, string[]>, profile: string): string[] {
+  return profile ? (map[profile] ?? []) : Object.values(map).flat();
+}
+
+/**
+ * Kit paints for `profile`, plus every kit installed under another profile.
+ *
+ * A rider model isn't a wardrobe: Rider+ ships its `paints` folder empty on purpose, because
+ * the kits you already own are meant to work on it. Scoping the list to the chosen model
+ * just empties the dropdown. Gloves already read this way — `scans.gloves` is one flat list
+ * — so this only makes the two consistent.
+ */
+function acrossProfiles(map: Record<string, string[]>, profile: string): string[] {
+  return [...(map[profile] ?? []), ...Object.values(map).flat()];
+}
+
+export function slotOptions(
+  slot: SlotDef,
+  bikeid: string,
+  loadout: Loadout,
+  scans: Scans,
+): string[] {
+  let opts: string[] = [];
+  switch (slot.key) {
+    case "paint":
+      opts = forPickedModel(forBike(scans.bikePaints, bikeid), bikeid, loadout, scans);
+      break;
+    case "modelSwap":
+      opts = forBike(scans.modelSwaps, bikeid);
+      break;
+    case "helmet":
+      opts = scans.helmets;
+      break;
+    case "helmetPaint":
+      opts = forModel(scans.helmetPaints, loadout.helmet);
+      break;
+    case "gogglesPaint":
+      opts = [
+        ...forModel(scans.goggles, loadout.helmet),
+        ...forProfile(scans.goggles, loadout.rider),
+      ];
+      break;
+    case "boots":
+      opts = scans.boots;
+      break;
+    case "bootsPaint":
+      opts = forModel(scans.bootPaints, loadout.boots);
+      break;
+    case "protection":
+      opts = scans.protection;
+      break;
+    case "protectionPaint":
+      opts = forModel(scans.protectionPaints, loadout.protection);
+      break;
+    case "glovesPaint":
+      opts = scans.gloves;
+      break;
+    case "suitPaint":
+      opts = acrossProfiles(scans.outfits, loadout.rider);
+      break;
+    case "rider":
+      opts = scans.riderProfiles;
+      break;
+    case "ridingStyle":
+      opts = scans.ridingStyles;
+      break;
+    case "tyres":
+      opts = scans.tyres;
+      break;
+    default:
+      opts = [];
+  }
+  const builtins = BUILTINS[slot.key] ?? [];
+  return [...new Set([...opts, ...builtins])];
+}
+
+export function isMissing(
+  slot: SlotDef,
+  bikeid: string,
+  loadout: Loadout,
+  scans: Scans,
+): boolean {
+  if (slot.freeText) return false;
+  const val = loadout[slot.key];
+  if (!val) return false;
+  return !slotOptions(slot, bikeid, loadout, scans).includes(val);
+}
+
+export function missingSlots(bikeid: string, loadout: Loadout, scans: Scans): SlotDef[] {
+  return SLOTS.filter((s) => isMissing(s, bikeid, loadout, scans));
+}
+
+/**
+ * A free name for a copy of `base`, given the names already in use.
+ *
+ * `Supercross` → `Supercross (copy)` → `Supercross (copy 2)`. Duplicating a copy re-uses
+ * the original's stem rather than growing `(copy) (copy)`, which is what a rider gets when
+ * they duplicate the same preset twice to try two variations of it.
+ */
+export function copyName(base: string, taken: string[]): string {
+  const used = new Set(taken.map((n) => n.trim().toLowerCase()));
+  const stem = base.trim().replace(/\s*\(copy(?: \d+)?\)$/i, "");
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? `${stem} (copy)` : `${stem} (copy ${n})`;
+    if (!used.has(name.toLowerCase())) return name;
+  }
+}
+
+export function loadoutSummary(loadout: Loadout): string {
+  const parts: string[] = [];
+  if (loadout.helmet && loadout.helmet !== "default") parts.push(loadout.helmet);
+  if (loadout.paint) parts.push(loadout.paint);
+  if (loadout.suitPaint) parts.push(loadout.suitPaint);
+  return parts.slice(0, 3).join(" · ") || "Stock look";
+}
