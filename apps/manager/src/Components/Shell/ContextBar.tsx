@@ -2,7 +2,6 @@ import { createContext, useContext, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@frost/shared/lib/utils";
 import { useT } from "@/i18n";
-import type { StudioTab } from "../Studio/Studio";
 import type { DashboardView, RailItem } from "./nav";
 
 /**
@@ -56,8 +55,7 @@ export function ContextTab({
 interface ContextBarProps {
   item?: RailItem;
   view: DashboardView;
-  studioTab: StudioTab;
-  onNavigate: (view: DashboardView, studio?: StudioTab) => void;
+  onNavigate: (view: DashboardView) => void;
   leftRef: Ref<HTMLDivElement>;
   rightRef: Ref<HTMLDivElement>;
 }
@@ -71,8 +69,7 @@ interface ContextBarProps {
 export default function ContextBar({
   item,
   view,
-  studioTab,
-  onNavigate,
+    onNavigate,
   leftRef,
   rightRef,
 }: ContextBarProps) {
@@ -85,11 +82,9 @@ export default function ContextBar({
       {tabs.length > 1 &&
         tabs.map((tab) => (
           <ContextTab
-            key={tab.studio ?? tab.view}
-            // Studio's tabs all share `view: "studio"`, so the active one is the tab whose
-            // sub-view is showing rather than the one whose view matches.
-            active={tab.studio ? view === "studio" && studioTab === tab.studio : view === tab.view}
-            onSelect={() => onNavigate(tab.view, tab.studio)}
+            key={tab.view}
+            active={view === tab.view}
+            onSelect={() => onNavigate(tab.view)}
           >
             {tab.rawLabel ?? t(tab.label)}
           </ContextTab>
