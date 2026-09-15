@@ -3728,6 +3728,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tauri",
+ "tauri-plugin-global-shortcut",
  "tauri-plugin-updater",
  "tokio",
  "uuid",
