@@ -8,12 +8,12 @@
     "apps/manager"
   ],
   "scripts": {
-    "dev": "cd apps/manager && npm run dev",
-    "start-dev": "cd apps/manager && npm run start-dev",
-    "build-prod": "cd apps/manager && npm run build-prod",
-    "tauri": "cd apps/manager && npm run tauri",
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "cd apps/manager && bun run dev",
+    "start-dev": "cd apps/manager && bun run start-dev",
+    "build-prod": "cd apps/manager && bun run build-prod",
+    "tauri": "cd apps/manager && bun run tauri",
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --filter '*' typecheck",
     "lint": "eslint ."
   },
   "overrides": {
