@@ -3644,7 +3644,7 @@ dependencies = [
 
 [[package]]
 name = "mxb-app"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3707,7 +3707,7 @@ dependencies = [
 
 [[package]]
 name = "mxb-core"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3715,6 +3715,7 @@ dependencies = [
  "dirs-next",
  "flate2",
  "getrandom 0.2.17",
+ "hmac",
  "image",
  "log",
  "md-5",
@@ -3728,6 +3729,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "tauri",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
  "tauri-plugin-updater",
  "tokio",
  "uuid",
