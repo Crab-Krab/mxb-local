@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 
 import {
@@ -16,13 +17,15 @@ interface HelpHintProps {
   /** One or two sentences explaining what the screen is for. */
   description: string;
   className?: string;
+  /** Anything shown under the description. */
+  children?: ReactNode;
 }
 
 /**
  * A small "?" icon that opens a popover explaining what the current screen
  * does. Drop it into a screen's header, right after the <h1>.
  */
-export default function HelpHint({ title, description, className }: HelpHintProps) {
+export default function HelpHint({ title, description, className, children }: HelpHintProps) {
   return (
     <Popover>
       <PopoverTrigger
@@ -41,6 +44,7 @@ export default function HelpHint({ title, description, className }: HelpHintProp
             {description}
           </PopoverDescription>
         </PopoverHeader>
+        {children}
       </PopoverContent>
     </Popover>
   );
