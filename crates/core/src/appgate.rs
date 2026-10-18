@@ -500,8 +500,11 @@ async fn ask(app: &AppHandle) -> Option<Answer> {
 
     // The machine's one-way hash rides along (`device.rs`), so a ban follows the PC to a fresh
     // account. Never the machine id itself; absent when the OS will not say.
+    // Which app and build this is, so the gate can turn away one older than the newest it still
+    // allows (`control-plane/src/appversion.ts`): `<bundle identifier>/<version>`.
+    let build = format!("{}/{}", app.config().identifier, app.package_info().version);
     let resp = match crate::device::with_device(
-        http().get(format!("{}/v1/app/gate", control_plane())).bearer_auth(&token),
+        http().get(format!("{}/v1/app/gate", control_plane())).bearer_auth(&token).header("X-MXB-App", build),
     )
     .await
     .send()
