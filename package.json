@@ -13,6 +13,7 @@
     "build-prod": "cd apps/manager && bun run build-prod",
     "tauri": "cd apps/manager && bun run tauri",
     "build": "bun run --filter '*' build",
+    "check:eula": "bun scripts/eula.mjs --check",
     "check:secure-boundary": "bun scripts/check-secure-boundary.mjs",
     "check:no-ban-guids": "bun scripts/check-no-ban-guids.mjs",
     "typecheck": "bun run --filter '*' typecheck",
