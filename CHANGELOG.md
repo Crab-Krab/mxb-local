@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-18 — Frost Converter v0.2.1 — One PC per license
+
+### Changed
+- **One PC.** A license runs on one PC at a time. Signing in on another PC moves it there, once a week; the PC it left stops converting at its next check, or within 7 days offline.
+- **License agreement 2026-10-18.** Says one PC instead of three. You accept it again on next start.
+
 ## 2026-10-18 — Frost Converter v0.2.0 — Licensed
 
 ### Changed
