@@ -24,9 +24,9 @@ const FIELD =
   "h-8 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2.5 text-[12.5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/60";
 
 /**
- * "Bought a coffee? Link the email you used." Two steps: an address, then the code mailed to
- * it. The control plane matches the address against Buy Me a Coffee's payments and grants the
- * pack; nothing here stores the address.
+ * "A member on Buy Me a Coffee? Link the email you joined with." Two steps: an address, then
+ * the code mailed to it. The control plane matches the address against Buy Me a Coffee's
+ * memberships and grants the Supporter badge; nothing here stores the address.
  */
 export default function SupporterEmailLink() {
   const t = useT();

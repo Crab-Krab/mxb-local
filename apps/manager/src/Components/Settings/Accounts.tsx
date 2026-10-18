@@ -53,7 +53,7 @@ import {
 import { useSteamLink } from "@/lib/useSteamLink";
 import { useT } from "@/i18n";
 import SupporterBadge from "@frost/shared/Components/Supporter/SupporterBadge";
-import { recheckSupporter, useSupporter } from "@frost/shared/api/supporter";
+import { hasLooks, recheckSupporter, useSupporter } from "@frost/shared/api/supporter";
 import SupporterEmailLink from "@frost/shared/Components/Supporter/SupporterEmailLink";
 import SupporterBuy from "@frost/shared/Components/Supporter/SupporterBuy";
 
@@ -73,8 +73,10 @@ export default function Accounts() {
   tRef.current = t;
 
   const [steamId, setSteamId] = useState<string | null>(null);
-  const { supporter } = useSupporter();
-  // A fresh link may be the account that holds the supporter pack, so ask again.
+  const supporterStatus = useSupporter();
+  const { supporter } = supporterStatus;
+  const looks = hasLooks(supporterStatus);
+  // A fresh link may be the account that holds the badge or the Style Pack, so ask again.
   const { linking, linkSteam } = useSteamLink({
     onLinked: (id) => {
       setSteamId(id);
@@ -240,12 +242,12 @@ export default function Accounts() {
               : t("settings.steamLinkBtn")}
         </Button>
       </Row>
-      {/* The supporter pack, bought here or unlocked by a coffee on Buy Me a Coffee once its
-          email is linked. Needs the Steam link, since the pack is kept by Steam id. */}
-      {steamId && !supporter && (
+      {/* The Style Pack, bought here, and the Supporter badge, from a Buy Me a Coffee membership
+          once its email is linked. Both need the Steam link, since they are kept by Steam id. */}
+      {steamId && (!looks || !supporter) && (
         <div className="flex flex-col gap-2 pb-2 pl-12">
-          <SupporterBuy />
-          <SupporterEmailLink />
+          {!looks && <SupporterBuy />}
+          {!supporter && <SupporterEmailLink />}
         </div>
       )}
 
@@ -306,7 +308,7 @@ function Row({
   icon: React.ReactNode;
   tone: Tone;
   name: string;
-  /** Beside the name — the supporter pack on the Steam row. */
+  /** Beside the name — the Supporter badge on the Steam row. */
   badge?: React.ReactNode;
   status: string;
   /** The line under the status: what this account is actually for, or how it is read. */

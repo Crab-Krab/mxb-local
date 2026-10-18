@@ -299,8 +299,8 @@ pub struct AppConfig {
     /// [`crate::support`]. Per app because this file is shared, and turning the card off in
     /// one app says nothing about the other.
     pub support: BTreeMap<String, SupportState>,
-    /// Whether the signed-in account has the supporter pack, as last read — see
-    /// [`crate::supporter`]. Cached so themes and the badge work offline.
+    /// Whether the signed-in account carries the Supporter badge and owns the Style Pack, as last
+    /// read — see [`crate::supporter`]. Cached so themes and the badge work offline.
     pub supporter: SupporterCache,
     /// Live share codes this machine publishes, and the key that lets it update each one.
     ///
@@ -441,11 +441,15 @@ pub struct SupportState {
     pub supporter: bool,
 }
 
-/// The supporter pack, as the control plane last said — see [`crate::supporter`].
+/// The Supporter badge and the Style Pack, as the control plane last said — see
+/// [`crate::supporter`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SupporterCache {
+    /// The Supporter badge: a Buy Me a Coffee membership, or a grandfathered grant.
     pub supporter: bool,
+    /// The Style Pack: themes and the accent colour, bought once. No badge.
+    pub style_pack: bool,
     /// Unix milliseconds of that answer. `0` means never asked.
     pub checked_at: u64,
 }

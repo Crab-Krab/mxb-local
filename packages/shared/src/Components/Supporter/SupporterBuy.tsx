@@ -14,9 +14,10 @@ const ERRORS: Record<Exclude<CheckoutError, "notSetUp">, BaseTKey> = {
 };
 
 /**
- * Buying the supporter pack: the Terms and the immediate-access waiver, then Stripe Checkout
- * in the browser. Where the pack isn't on sale yet, it goes straight to Buy Me a Coffee.
- * The app picks the pack up on its next start (or Check again where the picker offers it).
+ * Buying the Style Pack: the Terms and the immediate-access waiver, then Stripe Checkout in the
+ * browser. Where the pack isn't on sale yet, it goes straight to Buy Me a Coffee. The app picks
+ * the pack up on its next start (or Check again where the picker offers it). The pack is the
+ * themes and accent colour only; the Supporter badge comes from a membership.
  */
 export default function SupporterBuy() {
   const t = useT();

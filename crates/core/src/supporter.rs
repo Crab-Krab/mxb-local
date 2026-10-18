@@ -1,11 +1,13 @@
-//! Whether this player has the supporter pack.
+//! Whether this player carries the Supporter badge, and whether they own the Style Pack.
 //!
-//! The pack is cosmetic only — themes, an accent colour, a badge. Nothing the apps do today is
-//! behind it. The control plane says so with `/v1/entitlements` (`supporter`), which this asks
-//! while signed in and caches in the shared config, so the cosmetics keep working offline and
-//! the "support" card ([`crate::support`]) stops showing.
+//! Both are cosmetic only. Supporter (a Buy Me a Coffee membership) is the badge plus the
+//! themes and accent colour; the Style Pack (bought once) is the themes and accent colour with no
+//! badge. Nothing the apps do today is behind either. The control plane says so with
+//! `/v1/entitlements` (`supporter`, `stylePack`), which this asks while signed in and caches in
+//! the shared config, so the cosmetics keep working offline and, for a supporter, the "support"
+//! card ([`crate::support`]) stops showing.
 //!
-//! A failed check keeps the last answer. Signing out clears it, because the pack belongs to the
+//! A failed check keeps the last answer. Signing out clears it, because both belong to the
 //! account and not to the machine.
 
 use crate::config::{self, AppConfig, SupporterCache};
@@ -20,7 +22,10 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
+    /// The Supporter badge.
     pub supporter: bool,
+    /// The Style Pack. A supporter has its themes too; see [`has_looks`].
+    pub style_pack: bool,
     /// Unix milliseconds of the last answer from the control plane; `0` means never.
     pub checked_at: u64,
 }
@@ -29,8 +34,19 @@ pub struct Status {
 pub fn status(cfg: &AppConfig) -> Status {
     Status {
         supporter: is_supporter(cfg),
+        style_pack: has_style_pack(cfg),
         checked_at: cfg.supporter.checked_at,
     }
+}
+
+/// The Style Pack by the cache, and only while signed in to the account it was read for.
+pub fn has_style_pack(cfg: &AppConfig) -> bool {
+    cfg.supporter.style_pack && !cfg.cp_token.trim().is_empty()
+}
+
+/// The themes and accent colour: the Style Pack, or the Supporter badge.
+pub fn has_looks(cfg: &AppConfig) -> bool {
+    is_supporter(cfg) || has_style_pack(cfg)
 }
 
 /// Supporter by the cache, and only while signed in to the account it was read for.
@@ -39,9 +55,13 @@ pub fn is_supporter(cfg: &AppConfig) -> bool {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Entitlements {
     #[serde(default)]
     supporter: bool,
+    /// Absent from a control plane older than the Style Pack.
+    #[serde(default)]
+    style_pack: bool,
 }
 
 /// Ask the control plane, cache the answer, return the status. Without a sign-in this clears the
@@ -58,17 +78,21 @@ pub async fn refresh(app: &AppHandle) -> Status {
         return status(&AppConfig { supporter: SupporterCache::default(), ..cfg });
     }
 
-    let Some(supporter) = fetch(&token).await else {
+    let Some(answer) = fetch(&token).await else {
         return status(&cfg);
     };
     // Re-read before writing: the request took a while, and anything else may have saved since.
     let mut fresh = config::load(app).unwrap_or(cfg);
-    fresh.supporter = SupporterCache { supporter, checked_at: now_ms() };
+    fresh.supporter = SupporterCache {
+        supporter: answer.supporter,
+        style_pack: answer.style_pack,
+        checked_at: now_ms(),
+    };
     save(app, &fresh);
     status(&fresh)
 }
 
-async fn fetch(token: &str) -> Option<bool> {
+async fn fetch(token: &str) -> Option<Entitlements> {
     let client = reqwest::Client::builder().timeout(HTTP_TIMEOUT).build().ok()?;
     let resp = client
         .get(format!("{}/v1/entitlements", control_plane()))
@@ -81,7 +105,7 @@ async fn fetch(token: &str) -> Option<bool> {
         log::debug!("[supporter] the service answered {}", resp.status());
         return None;
     }
-    resp.json::<Entitlements>().await.ok().map(|e| e.supporter)
+    resp.json::<Entitlements>().await.ok()
 }
 
 fn save(app: &AppHandle, cfg: &AppConfig) {
@@ -155,7 +179,7 @@ fn checkout_error(status: u16, code: Option<&str>) -> &'static str {
 
 // ── The commands the webview calls ──────────────────────────────────────────────────────
 
-/// Start buying the pack: a Stripe Checkout URL for the browser. The player has agreed to the
+/// Start buying the Style Pack: a Stripe Checkout URL for the browser. The player has agreed to the
 /// Terms and asked for immediate access in the app first; both are sent as such. `Err` is a word
 /// from [`checkout_error`].
 #[tauri::command]
@@ -170,7 +194,7 @@ pub async fn supporter_checkout(app: tauri::AppHandle) -> Result<String, String>
         .build()
         .map_err(|_| "failed".to_string())?;
     let resp = client
-        .post(format!("{}/v1/supporter/checkout", control_plane()))
+        .post(format!("{}/v1/style-pack/checkout", control_plane()))
         .bearer_auth(&token)
         .json(&serde_json::json!({ "agree": true, "waiver": true }))
         .send()
@@ -190,13 +214,14 @@ pub async fn supporter_checkout(app: tauri::AppHandle) -> Result<String, String>
         .ok_or_else(|| "failed".to_string())
 }
 
-/// Mail a code to the address somebody paid with on Buy Me a Coffee.
+/// Mail a code to the address somebody's Buy Me a Coffee membership is under.
 #[tauri::command]
 pub async fn supporter_email_send(app: tauri::AppHandle, email: String) -> Result<(), String> {
     email_post(&app, "/v1/supporter/email", serde_json::json!({ "email": email.trim() })).await
 }
 
-/// Type the code back. Answers with the fresh status: the pack, if that address has paid.
+/// Type the code back. Answers with the fresh status: the badge, if that address holds a
+/// live membership.
 #[tauri::command]
 pub async fn supporter_email_confirm(app: tauri::AppHandle, code: String) -> Result<Status, String> {
     email_post(&app, "/v1/supporter/email/confirm", serde_json::json!({ "code": code.trim() })).await?;
@@ -209,7 +234,7 @@ pub fn supporter_status(app: tauri::AppHandle) -> Status {
     status(&config::load(&app).unwrap_or_default())
 }
 
-/// Ask again now — after signing in, or after buying the pack.
+/// Ask again now — after signing in, or after buying the Style Pack.
 #[tauri::command]
 pub async fn supporter_refresh(app: tauri::AppHandle) -> Status {
     refresh(&app).await
@@ -222,7 +247,7 @@ mod tests {
     fn cfg(token: &str, supporter: bool) -> AppConfig {
         AppConfig {
             cp_token: token.into(),
-            supporter: SupporterCache { supporter, checked_at: 5 },
+            supporter: SupporterCache { supporter, style_pack: false, checked_at: 5 },
             ..AppConfig::default()
         }
     }
@@ -230,7 +255,10 @@ mod tests {
     #[test]
     fn a_cached_supporter_counts_while_signed_in() {
         assert!(is_supporter(&cfg("tok", true)));
-        assert_eq!(status(&cfg("tok", true)), Status { supporter: true, checked_at: 5 });
+        assert_eq!(
+            status(&cfg("tok", true)),
+            Status { supporter: true, style_pack: false, checked_at: 5 }
+        );
     }
 
     #[test]
@@ -245,6 +273,25 @@ mod tests {
         assert!(!e.supporter);
         let e: Entitlements = serde_json::from_str(r#"{"supporter":true,"assets":[]}"#).unwrap();
         assert!(e.supporter);
+        assert!(!e.style_pack);
+        let e: Entitlements = serde_json::from_str(r#"{"supporter":false,"stylePack":true}"#).unwrap();
+        assert!(!e.supporter && e.style_pack);
+    }
+
+    #[test]
+    fn the_style_pack_unlocks_the_looks_and_not_the_badge() {
+        let c = AppConfig {
+            cp_token: "tok".into(),
+            supporter: SupporterCache { supporter: false, style_pack: true, checked_at: 5 },
+            ..AppConfig::default()
+        };
+        assert!(!is_supporter(&c));
+        assert!(has_style_pack(&c));
+        assert!(has_looks(&c));
+        assert!(has_looks(&cfg("tok", true)));
+        assert!(!has_looks(&cfg("tok", false)));
+        let signed_out = AppConfig { cp_token: String::new(), ..c };
+        assert!(!has_looks(&signed_out));
     }
 
     #[test]

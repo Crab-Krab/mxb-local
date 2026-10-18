@@ -2,25 +2,35 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * Whether the signed-in account has the supporter pack (`crates/core/src/supporter.rs`).
+ * Whether the signed-in account carries the Supporter badge and owns the Style Pack
+ * (`crates/core/src/supporter.rs`).
  *
- * Cosmetic only: themes, the accent colour, the badge. Never gate anything that exists today
- * on this.
+ * Cosmetic only. Supporter comes from a Buy Me a Coffee membership: the badge, plus the themes
+ * and accent colour. The Style Pack is bought once: the themes and accent colour, no badge.
+ * Never gate anything that exists today on either.
  */
 export interface SupporterStatus {
+  /** The Supporter badge. */
   supporter: boolean;
+  /** The Style Pack. Absent from a build older than it. */
+  stylePack?: boolean;
   /** Unix ms of the control plane's last answer; 0 means never. */
   checkedAt: number;
 }
 
-const NONE: SupporterStatus = { supporter: false, checkedAt: 0 };
+const NONE: SupporterStatus = { supporter: false, stylePack: false, checkedAt: 0 };
+
+/** The themes and accent colour: the Style Pack, or the Supporter badge. */
+export function hasLooks(status: SupporterStatus): boolean {
+  return status.supporter || status.stylePack === true;
+}
 
 /** The cached answer. Instant and offline. */
 export function supporterStatus(): Promise<SupporterStatus> {
   return invoke<SupporterStatus>("supporter_status");
 }
 
-/** Ask the control plane again — after signing in, or after buying the pack. */
+/** Ask the control plane again — after signing in, or after buying the Style Pack. */
 export function supporterRefresh(): Promise<SupporterStatus> {
   return invoke<SupporterStatus>("supporter_refresh");
 }
@@ -31,7 +41,7 @@ export function supporterRefresh(): Promise<SupporterStatus> {
  */
 export type EmailError = "notSetUp" | "steam" | "bad" | "expired" | "tooMany" | "failed";
 
-/** Mail a code to the address used on Buy Me a Coffee. Rejects with an {@link EmailError}. */
+/** Mail a code to the address a Buy Me a Coffee membership is under. Rejects with an {@link EmailError}. */
 export function supporterEmailSend(email: string): Promise<void> {
   return invoke("supporter_email_send", { email });
 }
@@ -43,11 +53,11 @@ export async function supporterEmailConfirm(code: string): Promise<SupporterStat
   return next;
 }
 
-/** Why buying the pack couldn't start. Each has a `supporter.buyErr.*` string. */
+/** Why buying the Style Pack couldn't start. Each has a `supporter.buyErr.*` string. */
 export type CheckoutError = "notSetUp" | "steam" | "owned" | "failed";
 
 /**
- * A Stripe Checkout URL for the supporter pack. Only call it once the player has ticked the
+ * A Stripe Checkout URL for the Style Pack. Only call it once the player has ticked the
  * Terms and the immediate-access waiver. Rejects with a {@link CheckoutError}; `notSetUp` means
  * the pack isn't on sale here, and the caller should offer Buy Me a Coffee instead.
  */

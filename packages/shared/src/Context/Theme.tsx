@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { useSupporter } from "../api/supporter";
+import { hasLooks, useSupporter } from "../api/supporter";
 import {
   ACCENT_PROPS,
   accentVars,
@@ -78,7 +78,7 @@ interface ThemeContextValue {
   /** The palette picked. A pack colorway without the pack is drawn as `frost`. */
   colorway: AnyColorway;
   setColorway: (colorway: AnyColorway) => void;
-  /** The custom accent (supporter pack), `#rrggbb`, or null for the colorway's own. */
+  /** The custom accent (Style Pack), `#rrggbb`, or null for the colorway's own. */
   accent: string | null;
   setAccent: (accent: string | null) => void;
   /** How big the interface is drawn. 1 is the design size. */
@@ -136,7 +136,7 @@ export function ThemeProvider({
   const [theme, setThemeState] = useState<ThemeMode>(stored);
   const [colorway, setColorwayState] = useState<AnyColorway>(readStoredColorway);
   const [accent, setAccentState] = useState<string | null>(readStoredAccent);
-  const { supporter } = useSupporter();
+  const looks = hasLooks(useSupporter());
   const [scale, setScaleState] = useState<UiScale>(readStoredScale);
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
 
@@ -176,18 +176,18 @@ export function ThemeProvider({
 
   useEffect(() => {
     document.documentElement.dataset.colorway =
-      isPackColorway(colorway) && !supporter ? "frost" : colorway;
-  }, [colorway, supporter]);
+      isPackColorway(colorway) && !looks ? "frost" : colorway;
+  }, [colorway, looks]);
 
   // Inline on <html>, so it outranks whichever colorway's rules are in play.
   useEffect(() => {
     const style = document.documentElement.style;
     for (const prop of ACCENT_PROPS) style.removeProperty(prop);
-    if (!supporter || !accent) return;
+    if (!looks || !accent) return;
     for (const [prop, value] of Object.entries(accentVars(accent, resolved))) {
       style.setProperty(prop, value);
     }
-  }, [accent, supporter, resolved]);
+  }, [accent, looks, resolved]);
 
   // Zoom is per-webview and does not persist across launches, so it is applied on mount as
   // well as on change. Never to the overlay: it is sized against the game's screen, not the

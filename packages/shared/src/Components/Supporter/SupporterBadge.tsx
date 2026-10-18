@@ -3,8 +3,9 @@ import { useT } from "../../i18n/context";
 import { cn } from "../../lib/utils";
 
 /**
- * The supporter pack's badge: a small coffee cup, with the word beside it unless `compact`.
- * Shown next to an account, a live share or a server whose owner has the pack.
+ * The Supporter badge: a small coffee cup, with the word beside it unless `compact`. Shown next
+ * to an account, a live share or a server whose owner is a supporter (a Buy Me a Coffee
+ * membership). The Style Pack doesn't carry it.
  */
 export default function SupporterBadge({
   compact = false,
