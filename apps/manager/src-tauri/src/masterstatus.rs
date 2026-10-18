@@ -52,7 +52,11 @@ pub enum Reason {
     Timeout,
     Refused,
     Dns,
+    /// The master was asked for a login and said no.
     Auth,
+    /// This machine couldn't mint the Steam ticket the login needs, so the master was never
+    /// asked. A fact about us, and `control-plane/src/masterstatus.ts` drops it as one.
+    Ticket,
     Protocol,
     Offline,
     /// A build with no server browser in it. Not an outage, and the control plane drops it
@@ -68,6 +72,7 @@ impl Reason {
             Reason::Refused => "refused",
             Reason::Dns => "dns",
             Reason::Auth => "auth",
+            Reason::Ticket => "ticket",
             Reason::Protocol => "protocol",
             Reason::Offline => "offline",
             Reason::Unsupported => "unsupported",
@@ -77,6 +82,11 @@ impl Reason {
 }
 
 /// Place a failure message in the closed list.
+///
+/// `worldnet` prefixes every failure of its own Steam ticket path with "No Steam ticket", and
+/// that arm comes straight after `unsupported`: the ticket helper's own words routinely satisfy
+/// a later arm ("Steam didn't answer the sign-in in time" reads as a timeout), and a ticket we
+/// never minted must not be counted as a master that didn't answer.
 ///
 /// The arms are ordered by how *diagnostic* each phrase is, not by how likely the failure is,
 /// because the real messages routinely satisfy two arms at once. `worldnet` says "the master
@@ -95,6 +105,9 @@ pub fn classify(message: &str) -> Reason {
     if has(&["isn't included", "not included", "unsupported"]) {
         // Must come first: this is a build without the browser, and it is never an outage.
         Reason::Unsupported
+    } else if has(&["no steam ticket", "auth ticket"]) {
+        // Our Steam path failed before anything went on the wire. Never the master's doing.
+        Reason::Ticket
     } else if has(&["dns", "resolve", "no such host", "name or service not known"]) {
         Reason::Dns
     } else if has(&["couldn't open a socket", "send failed", "no network", "network is down"]) {
@@ -137,8 +150,9 @@ pub enum MasterOutcome {
     /// The master didn't answer. There may still be a list — from the book — and that is not
     /// evidence the master is up.
     Failed(String),
-    /// The app never asked: the game is running and holds the account the login would spend.
-    /// Silence, not a data point, and never counted as either state.
+    /// The app never asked: the game is running and holds the account the login would spend,
+    /// or this app signed in moments ago and the master is still holding that session. Silence,
+    /// not a data point, and never counted as either state.
     NotAsked,
 }
 
@@ -356,12 +370,13 @@ pub async fn self_test(app: AppHandle, master: &MasterOutcome, listed: Option<us
                 None => "answered".into(),
             },
         },
-        // Neither a pass nor a failure: the app stayed off the master on purpose, because MX
-        // Bikes is running and holds the Steam account the login would spend.
+        // Neither a pass nor a failure: the app stayed off the master on purpose, because the
+        // Steam account the login would spend is held — by MX Bikes, or by this app's own
+        // sign-in a few minutes ago, which the master keeps open for a while after it ends.
         MasterOutcome::NotAsked => Check {
             id: "master",
             state: "skip",
-            detail: "not asked — the game is using the account".into(),
+            detail: "not asked — the account is signed in already (the game, or a sweep moments ago)".into(),
         },
         MasterOutcome::Failed(e) if classify(e) == Reason::Unsupported => {
             Check { id: "master", state: "skip", detail: e.clone() }
@@ -518,7 +533,7 @@ mod tests {
         assert_eq!(classify("operation timed out"), Reason::Timeout);
         assert_eq!(classify("Connection refused (os error 111)"), Reason::Refused);
         assert_eq!(classify("failed to lookup address: no such host"), Reason::Dns);
-        assert_eq!(classify("couldn't get a Steam auth ticket"), Reason::Auth);
+        assert_eq!(classify("couldn't get a Steam auth ticket"), Reason::Ticket);
         assert_eq!(classify("unexpected reply from the master"), Reason::Protocol);
     }
 
@@ -538,11 +553,39 @@ mod tests {
         // Names the login, and is an auth rejection — the arm the two above must not steal.
         assert_eq!(classify("The master server refused the login: banned."), Reason::Auth);
         assert_eq!(classify("The master server rejected the login."), Reason::Auth);
+        assert_eq!(
+            classify(
+                "The master server says this Steam account is already signed in (Account already in use). MX Bikes, or a dedicated server running as this account, is holding it."
+            ),
+            Reason::Auth
+        );
         // Names the login, and is neither: something answered with nothing in it.
         assert_eq!(
             classify("The master server accepted the login but sent no servers."),
             Reason::Protocol
         );
+    }
+
+    /// Our own Steam path failing, in `worldnet`'s words. Every one of these used to be `auth` —
+    /// or, for the helper's timeout, `timeout` — and so was counted against the master: on
+    /// 2026-10-18 `auth` was 38 of 61 installs. Each satisfies a later arm too, which is why the
+    /// ticket arm sits second.
+    #[test]
+    fn a_ticket_we_never_minted_is_ours_not_the_masters() {
+        for e in [
+            "No Steam ticket: Steam didn't answer the sign-in in time.",
+            "No Steam ticket: Steam isn't running, or this account doesn't own MX Bikes.",
+            "No Steam ticket: Steam refused an app ticket for MX Bikes (EResult 25).",
+            "No Steam ticket: Steam user interface unavailable.",
+            r"No Steam ticket: steam_api64.dll not available — tried C:\MX Bikes\steam_api64.dll (not there)",
+            "No Steam ticket: couldn't start the Steam sign-in helper: access is denied",
+            "No Steam ticket: the Steam sign-in helper didn't return a ticket",
+            "No Steam ticket: Steam wouldn't sign in.",
+        ] {
+            assert_eq!(classify(e), Reason::Ticket, "{e}");
+            assert_eq!(what_to_say(&MasterOutcome::Failed(e.into())), Say::Failed(Reason::Ticket));
+        }
+        assert_eq!(Reason::Ticket.as_str(), "ticket");
     }
 
     #[test]
