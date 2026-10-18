@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-17 — Frost's Studio v0.8.0 — Convert moves to Frost Converter
+
+### Changed
+- **No Convert tab.** FBX to EDF is now Frost Converter's alone (mxbsecure.com/converter). The Bike builder's hint points there.
+- **Latest only.** Studio tells mxbsecure.com which version it is when it starts, so a build that is too old can be asked to update.
+
 ## 2026-10-17 — Frost Converter v0.1.7 — Weighted gear stays put
 
 ### Fixed
