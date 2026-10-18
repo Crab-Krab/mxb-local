@@ -5,6 +5,14 @@
 ### Changed
 - **One PC.** A license runs on one PC at a time. Signing in on another PC moves it there, once a week; the PC it left stops converting at its next check, or within 7 days offline.
 - **License agreement 2026-10-18.** Says one PC instead of three. You accept it again on next start.
+- **Settings.** The gear in the title bar, next to your Steam name: your account and subscription (renews or ends on, the card it's charged to, Manage subscription), Sign out (the Converter only), Show the Preview tab, Fast mode, and the license agreement.
+- **Preview off by default.** The Convert/Preview tabs are gone until you tick Show the Preview tab.
+- **Main screen.** Every option fits without scrolling, the Convert button sits at the bottom, and the ? beside Make missing .shd lists the .shd files it would write for the files you added.
+- **App, not web page.** No browser right-click menu or browser keys (reload, print, back) in the window.
+
+### Fixed
+- **Dirt layers.** A texture's .lyr (its mud frames) is built into the model the way PiBoSo's fbx2edf does it, so dirt shows in game.
+- **Sign-in screen** says Frost Converter, not MXB App.
 
 ## 2026-10-18 — Frost Converter v0.2.0 — Licensed
 

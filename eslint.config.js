@@ -21,7 +21,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     // Standalone Node maintenance scripts run outside the browser bundle.
-    files: ["scripts/**/*.{js,mjs}"],
+    files: ["scripts/**/*.{js,mjs}", "public-overlay/scripts/**/*.{js,mjs}"],
     languageOptions: { globals: globals.node },
   },
   {
