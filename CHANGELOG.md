@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-18 — Frost Converter v0.2.0 — Licensed
+
+### Changed
+- **Subscription.** Frost Converter now needs a license: sign in with Steam, then subscribe ($7.99/month) at mxbsecure.com/converter. It runs on up to 3 PCs and works offline for up to 7 days between checks. Without a license it opens on a paywall.
+- **License agreement.** The first start asks you to accept the EULA. The ⓘ button in the title bar shows the version, your license and the full agreement.
+- **Command line.** Needs the accepted EULA and a license from the app; without one it exits with code 3.
+
 ## 2026-10-17 — Frost's Studio v0.8.0 — Convert moves to Frost Converter
 
 ### Changed
