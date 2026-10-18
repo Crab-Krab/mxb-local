@@ -48,6 +48,7 @@ pub(crate) use mxb_core::modelswap;
 mod mods;
 mod modstate;
 mod modwatch;
+mod cf_check;
 mod mxb_fetch;
 mod mxb_session;
 mod overlay;

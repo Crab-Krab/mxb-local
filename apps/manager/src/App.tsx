@@ -17,6 +17,7 @@ import {
   listGames,
   onGameFoldersChanged,
   onModsVerify,
+  onShopVerify,
   setActiveGame,
   setIntroSeen,
 } from "@frost/shared/api/mods";
@@ -132,25 +133,31 @@ const App = () => {
     };
   }, [t]);
 
-  // mxb-mods.com's check, when it needs the user. Its window shows Cloudflare's page and
-  // nothing of ours, so the instruction lives here — one toast, kept up while the window is
-  // and replaced by how it ended.
+  // mxb-mods.com's and mxbikes-shop.com's checks, when they need the user. Each window shows
+  // Cloudflare's page and nothing of ours, so the instruction lives here — one toast per site,
+  // kept up while its window is and replaced by how it ended.
   useEffect(() => {
-    const id = "mods-verify";
-    const unlisten = onModsVerify(({ state, site }) => {
-      if (state === "shown") {
-        toast.info(t("modsVerify.shown", { site }), { id, duration: Infinity });
-      } else if (state === "cleared") {
-        toast.success(t("modsVerify.cleared", { site }), { id, duration: 3000 });
-      } else {
-        toast.warning(
-          t(state === "dismissed" ? "modsVerify.dismissed" : "modsVerify.timedOut", { site }),
-          { id },
-        );
-      }
-    });
+    const watch = (
+      id: string,
+      prefix: "modsVerify" | "shopVerify",
+      subscribe: typeof onModsVerify,
+    ) =>
+      subscribe(({ state, site }) => {
+        const text = t(`${prefix}.${state}` as const, { site });
+        if (state === "shown") {
+          toast.info(text, { id, duration: Infinity });
+        } else if (state === "cleared") {
+          toast.success(text, { id, duration: 3000 });
+        } else {
+          toast.warning(text, { id });
+        }
+      });
+    const unlisten = [
+      watch("mods-verify", "modsVerify", onModsVerify),
+      watch("shop-verify", "shopVerify", onShopVerify),
+    ];
     return () => {
-      void unlisten.then((off) => off()).catch(() => {});
+      for (const off of unlisten) void off.then((fn) => fn()).catch(() => {});
     };
   }, [t]);
 

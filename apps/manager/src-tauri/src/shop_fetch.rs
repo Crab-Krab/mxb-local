@@ -11,13 +11,19 @@
 //! only a navigation runs the challenge), and a purchased file is downloaded by the browser
 //! itself, with the destination redirected into our staging directory so no bytes go through
 //! JavaScript.
+//!
+//! When Cloudflare's check will not clear by itself, the window is shown for the user to
+//! complete it and hidden again once it is past — the same treatment, and the same code
+//! ([`crate::cf_check`]), as the mods window. Closing it fails the request with a plain message
+//! until the user asks again (Retry, Refresh, or an install).
 
+use crate::cf_check::{self, GiveUp};
 use crate::shop_session::SHOP_BASE;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// The window everything here runs in. Public because the window-event handler and the IPC
@@ -33,9 +39,66 @@ pub const RESULT_EVENT: &str = "shop-fetch:done";
 /// clearance every other request then rides on.
 const DOWNLOADS_PATH: &str = "/all-my-downloads/";
 
-/// How long the window gets to load and clear Cloudflare. Generous: the first navigation of a
-/// session pays for the challenge, and a managed one is not always quick.
+/// How long a page that is simply *loading* — not challenged — gets to be ready. A challenge
+/// is timed separately: [`cf_check`] shows it to the user if it doesn't clear by itself.
 const READY_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// Tells the main window what the check is doing. Payload: `{ state, site }`.
+pub const VERIFY_EVENT: &str = "shop-verify";
+
+/// The check, as [`cf_check`] runs it for this window.
+static CHECK_STATE: cf_check::State = cf_check::State::new();
+static CHECK: cf_check::Site = cf_check::Site {
+    window: WINDOW,
+    domain,
+    base,
+    purpose: "load your purchases",
+    event: VERIFY_EVENT,
+    ready_timeout: READY_TIMEOUT,
+    stopped,
+    state: &CHECK_STATE,
+};
+
+const DOMAIN: &str = "mxbikes-shop.com";
+
+fn domain() -> &'static str {
+    DOMAIN
+}
+
+fn base() -> &'static str {
+    SHOP_BASE
+}
+
+/// What the purchases page says once the user closed or ignored the check.
+///
+/// Never "sign in" or "session": the purchases view reads either as an expired login and drops
+/// to signed-out, which would send the user to the wrong fix.
+fn message(reason: GiveUp) -> &'static str {
+    match reason {
+        GiveUp::Dismissed => {
+            "The mxbikes-shop.com check was closed before it finished, so your purchases \
+             can't load. Try again to reopen it."
+        }
+        GiveUp::TimedOut => {
+            "The mxbikes-shop.com check wasn't completed in time. Try again to reopen it."
+        }
+        GiveUp::Unavailable => {
+            "The app couldn't open a browser window for mxbikes-shop.com's check."
+        }
+    }
+}
+
+fn stopped(reason: GiveUp) -> anyhow::Error {
+    anyhow::anyhow!(message(reason))
+}
+
+/// The user asked again. Whatever made this session stop showing the check, show it once more.
+///
+/// Called only on an explicit action — Retry, Refresh, a sign-in, an install — never on the
+/// purchases view's own first load, so a closed check never reopens by itself.
+pub fn reset() {
+    CHECK.reset();
+}
 
 /// How long to wait for a download to *start* — that is, for `on_download` to fire. A managed
 /// challenge served in place of the file is the failure this catches: the window sits on an
@@ -151,11 +214,6 @@ struct Reply {
     id: u64,
     #[serde(default)]
     html: String,
-    /// `performance.timeOrigin` — the document's own identity, and the only cheap way to tell
-    /// a page that a navigation has actually *replaced* from the one that is still on screen
-    /// while the new one loads. See [`wait_until_ready`].
-    #[serde(default)]
-    origin: f64,
 }
 
 type Waiting = Mutex<std::collections::HashMap<u64, tokio::sync::oneshot::Sender<Reply>>>;
@@ -194,6 +252,12 @@ fn listen_for_results(app: &AppHandle) {
 /// would answer for the old session — or, when there was none, hand back the login form that
 /// EDD serves a signed-out visitor. That is the reload's real job, not just the button's.
 pub async fn downloads_html(reload: bool) -> anyhow::Result<String> {
+    // `reload` is always the user asking — Retry, Refresh, a sign-in — so it re-arms a check
+    // they closed. The view's own first load is not, and fails fast instead.
+    if reload {
+        reset();
+    }
+    CHECK.check_asking()?;
     let app = app()?;
     let _lease = WindowLease::acquire(app);
     let mut cleanup = WindowFailureCleanup::new(app);
@@ -209,10 +273,10 @@ pub async fn downloads_html(reload: bool) -> anyhow::Result<String> {
         // arrive, so a readiness check that couldn't tell them apart would pass at once and
         // read the page we just navigated away from. `Err` here (still on a challenge, script
         // not reachable) simply leaves the wait below unconstrained.
-        let previous = probe(&window).await.ok();
+        let previous = CHECK.probe(&window).await.origin;
         let url = format!("{SHOP_BASE}{DOWNLOADS_PATH}");
         window.navigate(url.parse()?)?;
-        wait_until_ready_replacing(&window, previous).await?;
+        CHECK.clear(app, &window, previous).await?;
     }
 
     static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -310,6 +374,8 @@ fn download_lock() -> &'static tokio::sync::Mutex<()> {
 /// for the other and nothing downstream of the bytes — `dropzone::plan`, the review sheet,
 /// `commit_drop` — moves at all.
 pub async fn download(app: &AppHandle, slug: &str, url: &str, dir: &Path) -> anyhow::Result<PathBuf> {
+    // An install is the user asking, so it re-arms a check they closed earlier.
+    reset();
     let _guard = download_lock().lock().await;
     let _lease = WindowLease::acquire(app);
     let mut cleanup = WindowFailureCleanup::new(app);
@@ -322,7 +388,7 @@ pub async fn download(app: &AppHandle, slug: &str, url: &str, dir: &Path) -> any
     window.navigate(url.parse()?)?;
 
     let outcome = async {
-        let path = wait_for_start(app, slug).await?;
+        let path = wait_for_start(app, &window, slug).await?;
         wait_for_finish(app, slug, &path).await?;
         anyhow::Ok(path)
     }
@@ -346,16 +412,42 @@ pub async fn download(app: &AppHandle, slug: &str, url: &str, dir: &Path) -> any
 
 /// Wait for `on_download` to fire.
 ///
-/// The failure this exists for: if Cloudflare answers the file URL with a challenge instead of
-/// the file, the window quietly renders an interstitial and no download is ever requested. That
-/// has to become a real error rather than a hang.
-async fn wait_for_start(app: &AppHandle, slug: &str) -> anyhow::Result<PathBuf> {
+/// If Cloudflare answers the file URL with a challenge instead of the file, the window renders
+/// an interstitial and no download is requested. A challenge still up after
+/// [`cf_check::REVEAL_AFTER`] is shown to the user; once they pass it, Cloudflare reloads the
+/// URL and the download starts. Anything else that never starts becomes a real error rather
+/// than a hang.
+async fn wait_for_start(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    slug: &str,
+) -> anyhow::Result<PathBuf> {
     let cancel = crate::cancel::token(slug);
-    let deadline = std::time::Instant::now() + DOWNLOAD_START_TIMEOUT;
-    while std::time::Instant::now() < deadline {
+    let started = || lock(download_state()).path.clone();
+    let mut deadline = Instant::now() + DOWNLOAD_START_TIMEOUT;
+    let mut challenged: Option<Instant> = None;
+    while Instant::now() < deadline {
         cancel.check()?;
-        if let Some(path) = lock(download_state()).path.clone() {
+        if let Some(path) = started() {
             return Ok(path);
+        }
+        if CHECK.probe(window).await.page == cf_check::Page::Challenge {
+            let since = *challenged.get_or_insert_with(Instant::now);
+            if since.elapsed() >= cf_check::REVEAL_AFTER {
+                CHECK
+                    .ask_user(app, window, || async {
+                        cancel.check()?;
+                        // The download starting is the usual end. A real page on the shop is
+                        // the other one: the check passed, and the URL answered with a page.
+                        Ok(started().is_some() || CHECK.probe(window).await.is_past(None))
+                    })
+                    .await?;
+                // The user's time on the check is not the store's time to start the file.
+                challenged = None;
+                deadline = Instant::now() + DOWNLOAD_START_TIMEOUT;
+            }
+        } else {
+            challenged = None;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -454,13 +546,6 @@ fn sanitize(name: &str) -> String {
 
 // ──────────────────────────────────── the window ────────────────────────────────────
 
-/// Whether the window that is up has been seen past Cloudflare's challenge.
-///
-/// Module-level rather than a local static inside [`ensure_window`], because [`close`] has to
-/// be able to clear it: it belongs to a particular window, and a stale `true` would let the
-/// *next* window be handed out before its own challenge had cleared.
-static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
 /// Build the hidden window on first use and leave it up for the session.
 ///
 /// The flag says whether this call is what built it — which is the same question as "is the
@@ -471,114 +556,48 @@ async fn ensure_window(app: &AppHandle) -> anyhow::Result<(tauri::WebviewWindow,
     let _guard = LOCK.lock().await;
 
     if let Some(existing) = app.get_webview_window(WINDOW) {
-        if READY.load(Ordering::Relaxed) {
+        // Whether the window that is up has been seen past the check. Kept by [`cf_check`] so
+        // [`close`] can clear it: a stale `true` would let the *next* window be handed out
+        // before its own check had cleared.
+        if CHECK.is_ready() {
             return Ok((existing, false));
         }
-        wait_until_ready(&existing).await?;
-        READY.store(true, Ordering::Relaxed);
+        CHECK.clear(app, &existing, None).await?;
+        CHECK.set_ready(true);
         return Ok((existing, false));
     }
 
     let url: tauri::Url = format!("{SHOP_BASE}{DOWNLOADS_PATH}").parse()?;
     log::info!("opening the hidden mxbikes-shop.com window");
-    let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::External(url))
-        .title("mxbikes-shop.com")
+    let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::External(url))
+        .title(DOMAIN)
         .on_download(|_webview, event| on_download(event))
-        // Never shown, for the reasons [`crate::mxb_fetch`] sets out at length: off-screen
-        // still leaves a window the system lists, and the webview keeps its own visibility
-        // flag, so the page is never treated as backgrounded.
+        // Never needed, and under Wine the drag-drop handler is what faults in `ole32`.
+        .disable_drag_drop_handler()
+        // Hidden until a check needs a person — see `cf_check`, which undoes all of the below
+        // while it is shown. `visible` is the *window*'s flag; the webview keeps its own, so
+        // the page is never treated as backgrounded.
         .visible(false)
         .inner_size(1.0, 1.0)
         .position(-32000.0, -32000.0)
         .skip_taskbar(true)
         .decorations(false)
         .focused(false)
-        .build()?;
+        .build();
+    let window = match built {
+        Ok(window) => window,
+        Err(e) => {
+            log::warn!("WebView unavailable for {DOMAIN} ({e}) — the check can't be shown in-app");
+            return Err(CHECK.give_up(GiveUp::Unavailable));
+        }
+    };
 
-    if let Err(error) = wait_until_ready(&window).await {
+    if let Err(error) = CHECK.clear(app, &window, None).await {
         close(app);
         return Err(error);
     }
-    READY.store(true, Ordering::Relaxed);
+    CHECK.set_ready(true);
     Ok((window, true))
-}
-
-/// Wait for the page to be able to run our script.
-///
-/// Two things have to be true: the IPC primitive has to be injected, and Cloudflare's managed
-/// challenge — which this window is served on first navigation, exactly as the login window
-/// is — has to have cleared. Polling a one-line `eval` covers both, since the challenge page is
-/// replaced by the real one when it passes.
-async fn wait_until_ready(window: &tauri::WebviewWindow) -> anyhow::Result<()> {
-    wait_until_ready_replacing(window, None).await
-}
-
-/// [`wait_until_ready`], for a page a navigation has just been asked for.
-///
-/// `replacing` is the document that has to be *gone* before the window counts as ready —
-/// identified by its `performance.timeOrigin`, which is minted per document. Without it the
-/// check answers about whatever is still on screen, which after a `navigate` is the previous
-/// page: complete, past the challenge, and wrong.
-async fn wait_until_ready_replacing(
-    window: &tauri::WebviewWindow,
-    replacing: Option<f64>,
-) -> anyhow::Result<()> {
-    let deadline = std::time::Instant::now() + READY_TIMEOUT;
-    let mut last: Option<String> = None;
-    while std::time::Instant::now() < deadline {
-        match probe(window).await {
-            Ok(origin) if Some(origin) != replacing => return Ok(()),
-            Ok(_) => last = Some("the page it was told to leave is still loaded".to_string()),
-            Err(e) => last = Some(e.to_string()),
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-    Err(anyhow::anyhow!(
-        "the MX Bikes Shop page never became ready — Cloudflare's check did not clear{}",
-        last.map(|e| format!(" ({e})")).unwrap_or_default()
-    ))
-}
-
-/// One round-trip that proves script can run and reach us, *and* that we are past the
-/// challenge — answering only when both are true is what makes this a readiness check rather
-/// than a liveness one.
-///
-/// "Past the challenge" is asked as `window._cf_chl_opt`, which the interstitial defines and an
-/// ordinary page does not. The obvious test — looking for `challenge-platform` in the HTML — is
-/// wrong, and quietly so: Cloudflare injects its `challenge-platform/scripts/jsd` script into
-/// *ordinary* pages as well when JS detections are on, so that string is no evidence of a
-/// challenge and the window would never be declared ready.
-///
-/// Answers with the document's `performance.timeOrigin`, so a caller that has just navigated
-/// can tell the page it asked for from the one it asked to leave.
-async fn probe(window: &tauri::WebviewWindow) -> anyhow::Result<f64> {
-    const PROBE_ID: u64 = 0;
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    lock(waiting()).insert(PROBE_ID, tx);
-    if let Err(e) = window.eval(probe_script()) {
-        lock(waiting()).remove(&PROBE_ID);
-        return Err(anyhow::anyhow!("{e}"));
-    }
-    match tokio::time::timeout(Duration::from_millis(400), rx).await {
-        Ok(Ok(reply)) => Ok(reply.origin),
-        _ => {
-            lock(waiting()).remove(&PROBE_ID);
-            Err(anyhow::anyhow!("still on the challenge, or not ready yet"))
-        }
-    }
-}
-
-/// The probe, as its own function so a test can hold it to what it has to say.
-fn probe_script() -> String {
-    format!(
-        "if (window.__TAURI_INTERNALS__ && document.readyState === 'complete' \
-         && typeof window._cf_chl_opt === 'undefined' \
-         && !/^just a moment/i.test(document.title || '')) {{ \
-         window.__TAURI_INTERNALS__.invoke\
-         ('plugin:event|emit', {{ event: {event}, \
-         payload: {{id:0, origin: performance.timeOrigin}} }}); }}",
-        event = js_string(RESULT_EVENT)
-    )
 }
 
 /// Drop the window, so the next use rebuilds it from a fresh navigation.
@@ -596,9 +615,10 @@ pub fn close(app: &AppHandle) {
 }
 
 fn destroy_window(app: &AppHandle) {
-    // Cleared before the close, not after: `READY` describes the window that is going away, and
-    // a `true` left behind would let the next one be handed out before its challenge cleared.
-    READY.store(false, Ordering::Relaxed);
+    // Cleared before the close, not after: the ready flag describes the window that is going
+    // away, and a `true` left behind would let the next one be handed out before its check
+    // cleared.
+    CHECK.set_ready(false);
     if let Some(win) = app.get_webview_window(WINDOW) {
         let _ = win.destroy();
     }
@@ -688,37 +708,54 @@ mod tests {
         let (tx, mut rx) = tokio::sync::oneshot::channel();
         lock(waiting()).insert(4242, tx);
 
-        deliver(Reply { id: 4243, html: "injected".into(), origin: 0.0 });
+        deliver(Reply { id: 4243, html: "injected".into() });
         assert!(rx.try_recv().is_err(), "a reply for another id must not resolve this request");
 
-        deliver(Reply { id: 4242, html: "ours".into(), origin: 0.0 });
+        deliver(Reply { id: 4242, html: "ours".into() });
         assert_eq!(rx.try_recv().unwrap().html, "ours");
     }
 
-    /// The probe has to carry the document's identity back, or a reload cannot be told from the
-    /// page it is replacing — which is how a fresh sign-in ends up reading the previous
-    /// session's DOM and reporting itself as expired.
-    #[test]
-    fn the_probe_reports_which_document_answered() {
-        let js = probe_script();
-        assert!(js.contains("performance.timeOrigin"), "{js}");
-        // The two conditions that make this a readiness check rather than a liveness one.
-        assert!(js.contains("_cf_chl_opt"), "{js}");
-        assert!(js.contains("readyState"), "{js}");
-        assert!(js.contains(RESULT_EVENT), "{js}");
-    }
-
-    /// A reply is parsed from a remote page, so every field it may omit has to have a default —
-    /// the probe sends no `html`, and the page read sends no `origin`.
+    /// A reply is parsed from a remote page, so every field it may omit has to have a default.
     #[test]
     fn a_reply_may_omit_everything_but_its_id() {
-        let probe: Reply = serde_json::from_str(r#"{"id":0,"origin":1234.5}"#).unwrap();
-        assert_eq!(probe.origin, 1234.5);
-        assert_eq!(probe.html, "");
+        let bare: Reply = serde_json::from_str(r#"{"id":0}"#).unwrap();
+        assert_eq!(bare.html, "");
 
         let read: Reply = serde_json::from_str(r#"{"id":3,"html":"<html></html>"}"#).unwrap();
-        assert_eq!(read.origin, 0.0);
         assert_eq!(read.html, "<html></html>");
+    }
+
+    /// The check is shown the way the mods one is: same size, same title shape, naming this
+    /// site and what it is for.
+    #[test]
+    fn the_shown_check_names_the_shop() {
+        assert_eq!(
+            CHECK.title(),
+            "Verifying access to mxbikes-shop.com — complete the check below to load your purchases"
+        );
+        assert!(cf_check::same_site(&format!("{SHOP_BASE}/"), (CHECK.base)()));
+        assert_eq!(CHECK.window, WINDOW);
+        assert_ne!(VERIFY_EVENT, RESULT_EVENT);
+    }
+
+    /// Closing the check fails fast with a plain message until the user asks again — and that
+    /// message must not read as a lost login, or the purchases view drops to signed-out (it
+    /// matches `/sign in|session/i`) and sends the user to the wrong fix.
+    #[test]
+    fn a_closed_check_says_so_and_waits_for_the_user() {
+        reset();
+        assert!(CHECK.check_asking().is_ok());
+        let err = CHECK.give_up(GiveUp::Dismissed);
+        assert!(err.to_string().contains("closed"), "{err}");
+        assert!(CHECK.check_asking().is_err(), "a closed check must not reopen by itself");
+        reset();
+        assert!(CHECK.check_asking().is_ok(), "an explicit retry re-arms it");
+
+        for reason in [GiveUp::Dismissed, GiveUp::TimedOut, GiveUp::Unavailable] {
+            let text = message(reason).to_ascii_lowercase();
+            assert!(text.contains("mxbikes-shop.com"), "{text}");
+            assert!(!text.contains("sign in") && !text.contains("session"), "{text}");
+        }
     }
 
     #[test]

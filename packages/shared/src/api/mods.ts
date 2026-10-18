@@ -686,6 +686,11 @@ export function onModsVerify(cb: (e: ModsVerify) => void): Promise<UnlistenFn> {
   return listen<ModsVerify>("mods-verify", (e) => cb(e.payload));
 }
 
+/** mxbikes-shop.com's check window, for the purchases view. Same states as {@link onModsVerify}. */
+export function onShopVerify(cb: (e: ModsVerify) => void): Promise<UnlistenFn> {
+  return listen<ModsVerify>("shop-verify", (e) => cb(e.payload));
+}
+
 /** Community scores for the given post ids, keyed by id. Ids the site didn't answer for
  *  are absent — ratings decorate a card, so a miss shows no stars rather than an error. */
 export function getModRatings(ids: number[]): Promise<Record<string, ModRating>> {

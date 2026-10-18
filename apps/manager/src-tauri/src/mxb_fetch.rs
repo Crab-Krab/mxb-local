@@ -32,15 +32,13 @@
 use crate::mods::mxb::Fetched;
 use crate::mods::Blocked;
 use crate::mxb_session;
-use serde::{Deserialize, Serialize};
+use crate::cf_check::{self, GiveUp};
+use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
-use tauri::{
-    AppHandle, Emitter, Listener, LogicalPosition, LogicalSize, Manager, WebviewUrl,
-    WebviewWindowBuilder,
-};
+use std::time::Duration;
+use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// The window the fetches run in. Public because the window-event handler and the IPC guard
 /// both have to recognise it — it is the one webview allowed to talk to us from a remote
@@ -58,107 +56,55 @@ const TIMEOUT: Duration = Duration::from_secs(45);
 /// How long to wait for a page that is simply *loading* — not challenged — to be ready.
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// How long Cloudflare's check gets to clear by itself in the hidden window before the user is
-/// shown it. A non-interactive challenge passes in a second or two; one still up after this
-/// is waiting for a person.
-const REVEAL_AFTER: Duration = Duration::from_secs(5);
-
-/// How long the shown check is left up for the user to complete.
-const ASSIST_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-
-/// The size of the shown window: enough for the Turnstile widget and Cloudflare's text.
-const ASSIST_SIZE: (f64, f64) = (520.0, 640.0);
-
 /// Tells the main window what the check is doing, so it can say so — WebView2 has no way to
-/// put our own line of text above a remote page. Payload: [`Verify`].
+/// put our own line of text above a remote page. Payload: `{ state, site }`.
 pub const VERIFY_EVENT: &str = "mods-verify";
 
-/// Why this session has stopped asking, if it has. Read before every WebView request so a
-/// dismissed check fails at once instead of rebuilding a window to be refused again.
-/// `0` = still asking; otherwise a [`GiveUp`] discriminant. Cleared by [`reset`].
-static GAVE_UP: AtomicU8 = AtomicU8::new(0);
+/// The check, as [`cf_check`] runs it for this window.
+static CHECK_STATE: cf_check::State = cf_check::State::new();
+static CHECK: cf_check::Site = cf_check::Site {
+    window: WINDOW,
+    domain,
+    base: mxb_session::base,
+    purpose: "load mod pages",
+    event: VERIFY_EVENT,
+    ready_timeout: READY_TIMEOUT,
+    stopped,
+    state: &CHECK_STATE,
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum GiveUp {
-    /// The user closed the check window.
-    Dismissed = 1,
-    /// The check was shown and left for [`ASSIST_TIMEOUT`] without being completed.
-    TimedOut = 2,
-    /// The WebView could not be built at all — no WebView2, or a Wine prefix without one.
-    Unavailable = 3,
+fn domain() -> &'static str {
+    mxb_session::site().domain
 }
 
-impl GiveUp {
-    fn from_u8(v: u8) -> Option<Self> {
-        match v {
-            1 => Some(Self::Dismissed),
-            2 => Some(Self::TimedOut),
-            3 => Some(Self::Unavailable),
-            _ => None,
+/// What the mod page says once the session has stopped asking. Each one points at the site
+/// itself, which the page offers as a button beside the error.
+fn message(reason: GiveUp) -> &'static str {
+    match reason {
+        GiveUp::Dismissed => {
+            "The mxb-mods.com check was closed before it finished, so mod pages can't load \
+             in the app right now. Open the mod on mxb-mods.com instead, or hit Retry to be \
+             shown the check again."
         }
-    }
-
-    /// What the mod page says. Each one points at the site itself, which the page offers as a
-    /// button beside the error.
-    fn message(self) -> &'static str {
-        match self {
-            Self::Dismissed => {
-                "The mxb-mods.com check was closed before it finished, so mod pages can't load \
-                 in the app right now. Open the mod on mxb-mods.com instead, or hit Retry to be \
-                 shown the check again."
-            }
-            Self::TimedOut => {
-                "The mxb-mods.com check wasn't completed in time. Hit Retry to be shown it \
-                 again, or open the mod on mxb-mods.com instead."
-            }
-            Self::Unavailable => {
-                "The app couldn't open a browser window for mxb-mods.com's check. Open the mod \
-                 on mxb-mods.com instead."
-            }
+        GiveUp::TimedOut => {
+            "The mxb-mods.com check wasn't completed in time. Hit Retry to be shown it \
+             again, or open the mod on mxb-mods.com instead."
+        }
+        GiveUp::Unavailable => {
+            "The app couldn't open a browser window for mxb-mods.com's check. Open the mod \
+             on mxb-mods.com instead."
         }
     }
 }
 
-fn gave_up() -> Option<GiveUp> {
-    GiveUp::from_u8(GAVE_UP.load(Ordering::Acquire))
-}
-
-fn give_up(reason: GiveUp) -> anyhow::Error {
-    GAVE_UP.store(reason as u8, Ordering::Release);
-    stopped(reason)
-}
-
+/// A `Blocked`, so the mod page renders it as a refusal with its site link.
 fn stopped(reason: GiveUp) -> anyhow::Error {
-    anyhow::Error::new(Blocked::new(None, reason.message()))
+    anyhow::Error::new(Blocked::new(None, message(reason)))
 }
 
 /// The user asked again (Retry). Whatever made this session stop asking, ask once more.
 pub fn reset() {
-    if let Some(reason) = GiveUp::from_u8(GAVE_UP.swap(0, Ordering::AcqRel)) {
-        log::info!("{} check re-armed by the user after {reason:?}", mxb_session::site().domain);
-    }
-}
-
-/// [`VERIFY_EVENT`]'s payload.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Verify {
-    /// `shown`, `cleared`, `dismissed` or `timedOut`.
-    state: &'static str,
-    site: &'static str,
-}
-
-fn notify(app: &AppHandle, state: &'static str) {
-    let payload = Verify {
-        state,
-        site: mxb_session::site().domain,
-    };
-    // To the main window only: the fetch window runs the remote site, which has no business
-    // hearing about it.
-    if let Err(e) = app.emit_to(crate::MAIN_WINDOW, VERIFY_EVENT, payload) {
-        log::debug!("could not tell the main window the check is {state}: {e}");
-    }
+    CHECK.reset();
 }
 
 /// The browser is expensive even when hidden. Keep it through a short burst of catalog
@@ -170,7 +116,6 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// parameter, along with everything between them and the command layer, to avoid this.
 static APP: OnceLock<AppHandle> = OnceLock::new();
 
-static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static ACTIVE: AtomicU64 = AtomicU64::new(0);
 static IDLE_GENERATION: AtomicU64 = AtomicU64::new(0);
 static LIFECYCLE: Mutex<()> = Mutex::new(());
@@ -341,9 +286,7 @@ pub async fn post(url: &str, form: &[(&str, String)]) -> anyhow::Result<Fetched>
 /// does not; where it is missing, a document we were handed at all counts as a 200. That is
 /// what keeps a refusal reported as one rather than as a page that parsed to nothing.
 pub async fn read_page(url: &str) -> anyhow::Result<Fetched> {
-    if let Some(reason) = gave_up() {
-        return Err(stopped(reason));
-    }
+    CHECK.check_asking()?;
     let app = app()?;
     let _nav = NAV.write().await;
     let _lease = WindowLease::acquire(app);
@@ -353,9 +296,9 @@ pub async fn read_page(url: &str) -> anyhow::Result<Fetched> {
     // Which document is being replaced. `navigate` returns immediately and the old page stays
     // loaded — and past its own check — until the new one arrives, so a readiness test that
     // could not tell them apart would pass at once and read the page we just left.
-    let previous = probe(&window).await.origin;
+    let previous = CHECK.probe(&window).await.origin;
     window.navigate(url.parse()?)?;
-    clear(app, &window, previous).await?;
+    CHECK.clear(app, &window, previous).await?;
 
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -441,9 +384,7 @@ fn urlencode(s: &str) -> String {
 }
 
 async fn run(url: &str, body: Option<&str>) -> anyhow::Result<Fetched> {
-    if let Some(reason) = gave_up() {
-        return Err(stopped(reason));
-    }
+    CHECK.check_asking()?;
     let app = app()?;
     let _nav = NAV.read().await;
     let _lease = WindowLease::acquire(app);
@@ -505,11 +446,6 @@ fn is_network_failure(error: &str) -> bool {
     e.contains("failed to fetch") || e.contains("load failed") || e.contains("networkerror")
 }
 
-/// Whether the origin the window reports (`location.origin`) is the catalog's.
-fn same_site(origin: &str, base: &str) -> bool {
-    origin.trim_end_matches('/').eq_ignore_ascii_case(base.trim_end_matches('/'))
-}
-
 /// Run one fetch in the window and wait for its reply.
 async fn send_fetch(
     window: &tauri::WebviewWindow,
@@ -542,7 +478,7 @@ async fn send_fetch(
 /// cross-origin request, which the site's CORS headers refuse. The window can end up elsewhere
 /// (a mod page that redirected off-site, an error page), so check before using it.
 async fn ensure_on_site(app: &AppHandle, window: &tauri::WebviewWindow) -> anyhow::Result<()> {
-    let p = probe(window).await;
+    let p = CHECK.probe(window).await;
     if p.origin.is_some() && !p.on_site {
         log::info!("the fetch window is off {} - navigating it back", mxb_session::site().domain);
         recover(app, window).await?;
@@ -552,9 +488,9 @@ async fn ensure_on_site(app: &AppHandle, window: &tauri::WebviewWindow) -> anyho
 
 /// Navigate the window back to the site's front page and wait for it to be past the check.
 async fn recover(app: &AppHandle, window: &tauri::WebviewWindow) -> anyhow::Result<()> {
-    let previous = probe(window).await.origin;
+    let previous = CHECK.probe(window).await.origin;
     window.navigate(mxb_session::base().parse()?)?;
-    clear(app, window, previous).await
+    CHECK.clear(app, window, previous).await
 }
 
 /// The script run inside the page.
@@ -644,11 +580,11 @@ async fn ensure_window(app: &AppHandle) -> anyhow::Result<tauri::WebviewWindow> 
     let _guard = LOCK.lock().await;
 
     if let Some(existing) = app.get_webview_window(WINDOW) {
-        if READY.load(Ordering::Relaxed) {
+        if CHECK.is_ready() {
             return Ok(existing);
         }
-        clear(app, &existing, None).await?;
-        READY.store(true, Ordering::Relaxed);
+        CHECK.clear(app, &existing, None).await?;
+        CHECK.set_ready(true);
         return Ok(existing);
     }
 
@@ -665,12 +601,12 @@ async fn ensure_window(app: &AppHandle) -> anyhow::Result<tauri::WebviewWindow> 
         // Never needed, and under Wine the drag-drop handler is what faults in `ole32` — the
         // reason the main window turns it off there too.
         .disable_drag_drop_handler()
-        // Hidden until a check needs a person — see `reveal`. `visible` here is the
+        // Hidden until a check needs a person — see `cf_check`. `visible` here is the
         // *window*'s flag; the webview inside keeps its own, which Tauri leaves on, and
         // WebView2 reads page visibility from that one, so nothing backgrounds the page.
         .visible(false)
         // A second line of defence while hidden: if anything ever does show this window
-        // un-asked, it has one pixel to do it in, well off-screen. `reveal` undoes all four.
+        // un-asked, it has one pixel to do it in, well off-screen. Showing the check undoes all four.
         .inner_size(1.0, 1.0)
         .position(-32000.0, -32000.0)
         .skip_taskbar(true)
@@ -685,273 +621,23 @@ async fn ensure_window(app: &AppHandle) -> anyhow::Result<tauri::WebviewWindow> 
                  pages will offer the site link instead",
                 mxb_session::site().domain
             );
-            return Err(give_up(GiveUp::Unavailable));
+            return Err(CHECK.give_up(GiveUp::Unavailable));
         }
     };
 
-    if let Err(error) = clear(app, &window, None).await {
+    if let Err(error) = CHECK.clear(app, &window, None).await {
         destroy_window(app);
         return Err(error);
     }
-    READY.store(true, Ordering::Relaxed);
+    CHECK.set_ready(true);
     Ok(window)
 }
 
 fn destroy_window(app: &AppHandle) {
-    READY.store(false, Ordering::Release);
+    CHECK.set_ready(false);
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.destroy();
     }
-}
-
-/// Wait until the window shows a page past Cloudflare's check — and, when `replacing` is set,
-/// not the page a navigation was just asked to leave.
-///
-/// `replacing` is that document's `performance.timeOrigin`. Without it the check answers
-/// about whatever is still on screen, which straight after a `navigate` is the previous page:
-/// complete, past its own check, and wrong.
-///
-/// Hidden first. A page that is merely loading gets [`READY_TIMEOUT`]; one sitting on the
-/// check gets [`REVEAL_AFTER`] to clear by itself, and is then shown to the user.
-async fn clear(
-    app: &AppHandle,
-    window: &tauri::WebviewWindow,
-    replacing: Option<f64>,
-) -> anyhow::Result<()> {
-    let started = Instant::now();
-    let mut challenged: Option<Instant> = None;
-    let mut last = "no answer from the page yet";
-    loop {
-        let probe = probe(window).await;
-        if probe.is_past(replacing) {
-            if let Some(since) = challenged {
-                log::info!(
-                    "{} check cleared by itself in the hidden window after {:?}",
-                    mxb_session::site().domain,
-                    since.elapsed()
-                );
-            }
-            return Ok(());
-        }
-        match probe.page {
-            Page::Challenge => {
-                let since = *challenged.get_or_insert_with(Instant::now);
-                if since.elapsed() >= REVEAL_AFTER {
-                    return ask_user(app, window, replacing).await;
-                }
-            }
-            Page::Ready => last = "the page it was told to leave is still loaded",
-            Page::Loading => last = "still loading",
-        }
-        if challenged.is_none() && started.elapsed() >= READY_TIMEOUT {
-            return Err(anyhow::anyhow!(
-                "the hidden {} window didn't finish loading in {READY_TIMEOUT:?} ({last})",
-                mxb_session::site().domain
-            ));
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-}
-
-/// Show the check to the user, and wait for them to complete it or close it.
-///
-/// One at a time: a second request arriving mid-check waits here, and finds the answer the
-/// first one got instead of opening anything.
-async fn ask_user(
-    app: &AppHandle,
-    window: &tauri::WebviewWindow,
-    replacing: Option<f64>,
-) -> anyhow::Result<()> {
-    static ASKING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    let _guard = ASKING.lock().await;
-    if let Some(reason) = gave_up() {
-        return Err(stopped(reason));
-    }
-    if probe(window).await.is_past(replacing) {
-        return Ok(());
-    }
-
-    let domain = mxb_session::site().domain;
-    log::info!(
-        "{domain} check did not clear by itself within {REVEAL_AFTER:?} — showing it to the user"
-    );
-    reveal(window);
-    notify(app, "shown");
-
-    let shown = Instant::now();
-    loop {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        // Closed by the user. The window is transient (never parked in the tray), so a close
-        // is a destroy and the label is gone.
-        if app.get_webview_window(WINDOW).is_none() {
-            READY.store(false, Ordering::Release);
-            log::info!(
-                "user closed the {domain} check after {:?} — not asking again this session \
-                 unless they hit Retry",
-                shown.elapsed()
-            );
-            notify(app, "dismissed");
-            return Err(give_up(GiveUp::Dismissed));
-        }
-        if probe(window).await.is_past(replacing) {
-            log::info!("{domain} check cleared by the user after {:?}", shown.elapsed());
-            conceal(window);
-            notify(app, "cleared");
-            return Ok(());
-        }
-        if shown.elapsed() >= ASSIST_TIMEOUT {
-            log::info!(
-                "{domain} check was shown for {ASSIST_TIMEOUT:?} and not completed — timed out; \
-                 not asking again this session unless the user hits Retry"
-            );
-            conceal(window);
-            notify(app, "timedOut");
-            return Err(give_up(GiveUp::TimedOut));
-        }
-    }
-}
-
-/// Undo everything that keeps the window out of sight, and put it in front of the user.
-fn reveal(window: &tauri::WebviewWindow) {
-    let title = format!(
-        "Verifying access to {} — complete the check below to load mod pages",
-        mxb_session::site().domain
-    );
-    // Each step on its own: a window manager that refuses one (Wine's is the likeliest) should
-    // not stop the rest from putting the window where it can be seen.
-    let steps: [(&str, tauri::Result<()>); 7] = [
-        ("title", window.set_title(&title)),
-        ("decorations", window.set_decorations(true)),
-        ("taskbar", window.set_skip_taskbar(false)),
-        ("size", window.set_size(LogicalSize::new(ASSIST_SIZE.0, ASSIST_SIZE.1))),
-        ("center", window.center()),
-        ("show", window.show()),
-        ("focus", window.set_focus()),
-    ];
-    for (step, result) in steps {
-        if let Err(e) = result {
-            log::warn!("showing the check window: {step} failed: {e}");
-        }
-    }
-}
-
-/// Back out of sight, the way [`ensure_window`] built it, for the requests still to come.
-fn conceal(window: &tauri::WebviewWindow) {
-    let _ = window.hide();
-    let _ = window.set_skip_taskbar(true);
-    let _ = window.set_decorations(false);
-    let _ = window.set_size(LogicalSize::new(1.0, 1.0));
-    let _ = window.set_position(LogicalPosition::new(-32000.0, -32000.0));
-    let _ = window.set_title(mxb_session::site().domain);
-}
-
-/// What the page in the window is doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Page {
-    /// Loaded, script and IPC available, and not Cloudflare's check.
-    Ready,
-    /// Sitting on Cloudflare's check.
-    Challenge,
-    /// Anything else: mid-navigation, not answering, or a page without our IPC.
-    Loading,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Probe {
-    page: Page,
-    /// The document's `performance.timeOrigin`, minted fresh per document — how a caller that
-    /// has just navigated tells the page it asked for from the one it asked to leave.
-    origin: Option<f64>,
-    /// The document is on the catalog's own origin - the only place a fetch to it is same-origin.
-    on_site: bool,
-}
-
-impl Probe {
-    fn is_past(&self, replacing: Option<f64>) -> bool {
-        self.page == Page::Ready
-            && self.on_site
-            && (replacing.is_none() || self.origin != replacing)
-    }
-}
-
-#[derive(Deserialize)]
-struct ProbeReply {
-    ipc: bool,
-    complete: bool,
-    challenge: bool,
-    origin: f64,
-    /// `location.origin`.
-    #[serde(default)]
-    site: String,
-}
-
-/// Read the page's state straight out of the WebView.
-///
-/// Asked with `eval_with_callback` rather than over our IPC, because the question that matters
-/// most — *is this the check?* — has to be answerable on the check itself. Our IPC's presence is
-/// still one of the answers: the fetches depend on it, and if a Tauri upgrade ever renames
-/// `__TAURI_INTERNALS__` this reports "loading" for good rather than declaring the page ready.
-async fn probe(window: &tauri::WebviewWindow) -> Probe {
-    let reply = eval_json::<ProbeReply>(window, &probe_script(), Duration::from_secs(1)).await;
-    classify(reply)
-}
-
-fn classify(reply: Option<ProbeReply>) -> Probe {
-    let Some(r) = reply else {
-        return Probe {
-            page: Page::Loading,
-            origin: None,
-            on_site: false,
-        };
-    };
-    let page = if r.challenge {
-        Page::Challenge
-    } else if r.complete && r.ipc {
-        Page::Ready
-    } else {
-        Page::Loading
-    };
-    Probe {
-        page,
-        origin: Some(r.origin),
-        on_site: same_site(&r.site, mxb_session::base()),
-    }
-}
-
-/// The probe, as its own function so a test can hold it to what it has to say.
-///
-/// "On the check" is asked as `window._cf_chl_opt`, which the interstitial defines and an
-/// ordinary page does not, or a "Just a moment…" title. The obvious test — looking for
-/// `challenge-platform` in the HTML — is wrong, and quietly so: Cloudflare injects that script
-/// into ordinary pages too when JS detections are on, so the window would never be ready.
-fn probe_script() -> String {
-    "(function(){ try { return { \
-       ipc: !!window.__TAURI_INTERNALS__, \
-       complete: document.readyState === 'complete', \
-       challenge: typeof window._cf_chl_opt !== 'undefined' \
-         || /^just a moment/i.test(document.title || ''), \
-       origin: performance.timeOrigin, site: location.origin }; } catch (e) { return null; } })()"
-        .to_string()
-}
-
-/// Evaluate `js` in `window` and deserialize what it returns. `None` for anything that did not
-/// come back as the expected shape in time — a page mid-navigation answers `null`, or nothing.
-async fn eval_json<T: serde::de::DeserializeOwned + Send + 'static>(
-    window: &tauri::WebviewWindow,
-    js: &str,
-    within: Duration,
-) -> Option<T> {
-    let (tx, rx) = tokio::sync::oneshot::channel::<String>();
-    let tx = Mutex::new(Some(tx));
-    window
-        .eval_with_callback(js, move |json| {
-            if let Some(tx) = lock(&tx).take() {
-                let _ = tx.send(json);
-            }
-        })
-        .ok()?;
-    let json = tokio::time::timeout(within, rx).await.ok()?.ok()?;
-    serde_json::from_str(&json).ok()
 }
 
 /// Once at startup: read the WebView's real user agent, and whether an earlier session left a
@@ -971,7 +657,7 @@ pub fn inspect_on_startup(app: &AppHandle) {
 
         let mut ua = None;
         for _ in 0..40 {
-            ua = eval_json::<String>(&main, "navigator.userAgent", Duration::from_secs(1)).await;
+            ua = cf_check::eval_json::<String>(&main, "navigator.userAgent", Duration::from_secs(1)).await;
             if ua.as_deref().is_some_and(|ua| !ua.is_empty()) {
                 break;
             }
@@ -1109,49 +795,6 @@ mod tests {
         );
     }
 
-    /// The bug this module shipped with: the probe answered on Cloudflare's interstitial,
-    /// because Tauri injects its IPC there too. Every question below has to be asked, or the
-    /// window is declared ready while still on "Just a moment…" and every request is refused.
-    #[test]
-    fn the_probe_asks_every_question() {
-        let js = probe_script();
-        assert!(js.contains("_cf_chl_opt"), "{js}");
-        assert!(js.contains("just a moment"), "{js}");
-        assert!(js.contains("readyState === 'complete'"), "{js}");
-        assert!(js.contains("__TAURI_INTERNALS__"), "{js}");
-        // The naive test: Cloudflare injects `challenge-platform` into ordinary pages as
-        // well, so keying on it would mean the window is never ready at all.
-        assert!(!js.contains("challenge-platform"), "{js}");
-        // Without a per-document token a caller that just navigated cannot tell the page it
-        // asked for from the one it asked to leave.
-        assert!(js.contains("performance.timeOrigin"), "{js}");
-    }
-
-    fn reply(ipc: bool, complete: bool, challenge: bool, origin: f64) -> Option<ProbeReply> {
-        Some(ProbeReply {
-            ipc,
-            complete,
-            challenge,
-            origin,
-            site: mxb_session::base().to_string(),
-        })
-    }
-
-    /// A document anywhere but the catalog's origin cannot fetch from it same-origin, so it is
-    /// never "past" - however complete it looks.
-    #[test]
-    fn a_page_off_the_site_is_not_ready() {
-        let mut off = reply(true, true, false, 1.0).unwrap();
-        off.site = "https://example.org".to_string();
-        let p = classify(Some(off));
-        assert!(!p.on_site);
-        assert!(!p.is_past(None));
-        assert!(same_site("https://mxb-mods.com/", "https://mxb-mods.com"));
-        assert!(!same_site("https://www.mxb-mods.com", "https://mxb-mods.com"));
-        assert!(!same_site("", "https://mxb-mods.com"));
-        assert!(classify(reply(true, true, false, 1.0)).is_past(None));
-    }
-
     #[test]
     fn rejected_fetches_are_told_from_answers() {
         assert!(is_network_failure("TypeError: Failed to fetch"));
@@ -1161,45 +804,34 @@ mod tests {
         assert!(!is_network_failure(""));
     }
 
-    /// The challenge wins over everything else — Tauri's IPC is injected into it and it
-    /// finishes loading like any page — and nothing that failed to answer is ever ready.
-    #[test]
-    fn a_challenge_is_never_ready() {
-        assert_eq!(classify(reply(true, true, true, 1.0)).page, Page::Challenge);
-        assert_eq!(classify(reply(true, false, true, 1.0)).page, Page::Challenge);
-        assert_eq!(classify(reply(true, true, false, 1.0)).page, Page::Ready);
-        assert_eq!(classify(reply(true, false, false, 1.0)).page, Page::Loading);
-        assert_eq!(classify(reply(false, true, false, 1.0)).page, Page::Loading);
-        assert_eq!(classify(None).page, Page::Loading);
-    }
-
-    /// Straight after a navigation the old page is still loaded and past its check. It must
-    /// not count as the new one.
-    #[test]
-    fn the_page_being_replaced_does_not_count() {
-        let old = classify(reply(true, true, false, 100.0));
-        assert!(old.is_past(None));
-        assert!(!old.is_past(Some(100.0)));
-        assert!(classify(reply(true, true, false, 200.0)).is_past(Some(100.0)));
-        assert!(!classify(reply(true, true, true, 200.0)).is_past(Some(100.0)));
-    }
-
     /// A dismissed check stops the session asking, and Retry is what starts it again. The
     /// message is a `Blocked`, so the mod page renders it as a refusal with its site link.
     #[test]
     fn a_dismissed_check_fails_fast_until_reset() {
         reset();
-        assert_eq!(gave_up(), None);
-        let err = give_up(GiveUp::Dismissed);
-        assert_eq!(gave_up(), Some(GiveUp::Dismissed));
+        assert_eq!(CHECK.gave_up(), None);
+        let err = CHECK.give_up(GiveUp::Dismissed);
+        assert_eq!(CHECK.gave_up(), Some(GiveUp::Dismissed));
         assert!(err.downcast_ref::<Blocked>().is_some());
         assert!(err.to_string().contains("Retry"), "{err}");
+        assert!(CHECK.check_asking().unwrap_err().downcast_ref::<Blocked>().is_some());
         reset();
-        assert_eq!(gave_up(), None);
+        assert_eq!(CHECK.gave_up(), None);
         for reason in [GiveUp::Dismissed, GiveUp::TimedOut, GiveUp::Unavailable] {
-            assert_eq!(GiveUp::from_u8(reason as u8), Some(reason));
-            assert!(reason.message().contains("mxb-mods.com"));
+            assert!(message(reason).contains("mxb-mods.com"));
         }
+    }
+
+    /// The shown window is titled exactly as it was before the check moved to `cf_check`.
+    #[test]
+    fn the_shown_title_is_unchanged() {
+        assert_eq!(
+            CHECK.title(),
+            format!(
+                "Verifying access to {} — complete the check below to load mod pages",
+                mxb_session::site().domain
+            )
+        );
     }
 
     /// Presence and expiry are all that is read — and an expired clearance is not a reason to
