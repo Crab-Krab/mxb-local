@@ -28,7 +28,27 @@ import { Button } from "../ui/button";
  * only goes quiet for the moment it takes to open the browser, and every wait can be restarted
  * over the top of itself.
  */
-export default function SigninGate() {
+/** What the left half says: the app's name, its pitch, and three short points. */
+export interface SigninBrand {
+  name: string;
+  headline: string;
+  lede: string;
+  points: { title: string; body: string }[];
+}
+
+/** MXB App's, which every app showed before an app could say its own. */
+export const MXB_APP_BRAND: SigninBrand = {
+  name: "MXB App",
+  headline: "Your MX Bikes life, all in one place.",
+  lede: "MXB App makes it easier to discover and install mods, keep your library organized, find a server, and use creator-protected content you own.",
+  points: [
+    { title: "Find what you want", body: "Browse tracks, bikes, gear, and more." },
+    { title: "Install it simply", body: "Skip the folder hunting and manual setup." },
+    { title: "Ride with confidence", body: "Your library and ownership stay connected." },
+  ],
+};
+
+export default function SigninGate({ brand = MXB_APP_BRAND }: { brand?: SigninBrand } = {}) {
   const [required, setRequired] = useState(false);
   /** The browser is being opened. The one moment when a second click has nothing to do. */
   const [opening, setOpening] = useState(false);
@@ -202,7 +222,7 @@ export default function SigninGate() {
           <div className="flex select-none items-center" data-tauri-drag-region>
             <span className="flex items-baseline gap-2 font-cond">
               <span className="text-sm font-extrabold tracking-[-0.04em] text-foreground">
-                MXB App
+                {brand.name}
               </span>
               <span className="text-[11px] font-medium text-faint">
                 by <span className="font-semibold text-muted-foreground">mxbsecure</span>
@@ -215,32 +235,19 @@ export default function SigninGate() {
               Hello, rider.
             </p>
             <h1 className="mt-4 max-w-[620px] text-[clamp(2.6rem,5vw,5rem)] font-extrabold leading-[0.96] tracking-[-0.045em] text-foreground">
-              Your MX Bikes life, all in one place.
+              {brand.headline}
             </h1>
             <p className="mt-7 max-w-[570px] text-[15px] leading-7 text-muted-foreground sm:text-base">
-              MXB App makes it easier to discover and install mods, keep your library organized,
-              find a server, and use creator-protected content you own.
+              {brand.lede}
             </p>
 
             <div className="mt-10 grid max-w-[600px] gap-5 border-l border-primary-line pl-5 sm:grid-cols-3 sm:gap-7">
-              <div>
-                <p className="text-sm font-semibold text-foreground">Find what you want</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Browse tracks, bikes, gear, and more.
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground">Install it simply</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Skip the folder hunting and manual setup.
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground">Ride with confidence</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Your library and ownership stay connected.
-                </p>
-              </div>
+              {brand.points.map((p) => (
+                <div key={p.title}>
+                  <p className="text-sm font-semibold text-foreground">{p.title}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{p.body}</p>
+                </div>
+              ))}
             </div>
           </div>
         </section>
