@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-mxb-local-0.20.6-local.2
+  group: publish-mxb-local-0.20.6-local.3
   cancel-in-progress: false
 
 jobs:
@@ -22,14 +22,19 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: Crab-Krab/mxb-local
-      BUILD_RUN: '40813594922'
-      BUILD_SHA: 24fb7f6387639704068e5ea87d0c4eb228125dea
-      ARTIFACT_ID: '12873995398'
-      ARCHIVE_SHA256: 4b1675978e9233211a9c7581aa8f606aa551fc28f1a95da761a358fdd81545a0
-      INSTALLER_SHA256: 3e9b648278f463c30934533fdf9cc51ac8499a1695f4ccc37db8bd3e84f3d741
-      INSTALLER: MXB Local_0.20.6-local.2_x64-setup.exe
-      RELEASE_TAG: v0.20.6-local.2
+      BUILD_RUN: '40850647284'
+      BUILD_SHA: 8a59578a47841be2c7d51ee889417f310c9b50ab
+      ARTIFACT_ID: '12887474877'
+      ARCHIVE_SHA256: 391d1c9dfa78a89d464a207cf8e73c61ad67fc948ba04fc8218c92e71f955102
+      INSTALLER_SHA256: 956cd87a909388b749bd842de8b53e4117fffd74c0dba40559d91426b29909a4
+      INSTALLER: MXB Local_0.20.6-local.3_x64-setup.exe
+      RELEASE_TAG: v0.20.6-local.3
+      DEPENDENCY_ARTIFACT_ID: '12885844609'
+      DEPENDENCY_ARCHIVE_SHA256: 6768ae576895f749d9941e6b2e1d217e40d766f93e50c8a94a5ef87af847cb05
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Verify the successful source build and artifact identity
         shell: bash
         run: |
@@ -50,6 +55,9 @@ jobs:
                           if a['id'] == int(os.environ['ARTIFACT_ID']))
           assert artifact['name'] == 'MXB-Local-Windows' and not artifact['expired']
           assert artifact['digest'] == 'sha256:' + os.environ['ARCHIVE_SHA256']
+          dependency = next(a for a in json.loads(Path('artifacts.json').read_text())['artifacts'] if a['id'] == int(os.environ['DEPENDENCY_ARTIFACT_ID']))
+          assert dependency['name'] == 'dependency-review' and not dependency['expired']
+          assert dependency['digest'] == 'sha256:' + os.environ['DEPENDENCY_ARCHIVE_SHA256']
           for tag in json.loads(Path('existing-tags.json').read_text()):
               if tag['ref'] == 'refs/tags/' + os.environ['RELEASE_TAG']:
                   assert tag['object']['type'] == 'commit' and tag['object']['sha'] == os.environ['BUILD_SHA']
@@ -65,8 +73,13 @@ jobs:
             --header 'Accept: application/vnd.github+json' \
             --output verified-build.zip \
             "https://api.github.com/repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip"
+          curl --fail --location --silent --show-error \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --output verified-dependencies.zip \
+            "https://api.github.com/repos/$GH_REPO/actions/artifacts/$DEPENDENCY_ARTIFACT_ID/zip"
           python3 - <<'PY'
-          import hashlib, os, zipfile
+          import hashlib, json, os, zipfile
           from pathlib import Path
           archive = Path('verified-build.zip').read_bytes()
           assert hashlib.sha256(archive).hexdigest() == os.environ['ARCHIVE_SHA256']
@@ -79,7 +92,18 @@ jobs:
               assert digest.upper() in z.read('SHA256.txt').decode('utf-8-sig').upper()
               (output / os.environ['INSTALLER']).write_bytes(installer)
               (output / 'LICENSE').write_bytes(z.read('LICENSE'))
-              (output / 'SHA256SUMS.txt').write_text(digest + '  ' + os.environ['INSTALLER'] + '\n')
+              for name in ['Cargo.lock', 'bun.lock', 'frontend-runtime-modules.json']:
+                  (output / name).write_bytes(z.read(name))
+              (output / 'SHA256SUMS.txt').write_text(digest + '  ' + os.environ['INSTALLER'].replace(' ', '.') + '\n')
+          dependency_archive = Path('verified-dependencies.zip').read_bytes()
+          assert hashlib.sha256(dependency_archive).hexdigest() == os.environ['DEPENDENCY_ARCHIVE_SHA256']
+          with zipfile.ZipFile('verified-dependencies.zip') as z:
+              (output / 'windows-runtime-tree.txt').write_bytes(z.read('windows-runtime-tree.txt'))
+              findings = json.loads(z.read('dependency-advisories.json'))
+              for advisory in findings['advisories']:
+                  advisory.pop('details', None)
+              (output / 'dependency-advisories.json').write_text(json.dumps(findings, indent=2))
+          (output / 'SECURITY-REVIEW.md').write_bytes(Path('SECURITY-REVIEW-local.3.md').read_bytes())
           print('Archive and installer SHA256 verified. Installer is unchanged from the tested build.')
           PY
 
@@ -93,9 +117,9 @@ jobs:
 
           ### Install or update
 
-          Download **MXB.Local_0.20.6-local.2_x64-setup.exe** below, close MXB Local, then run the installer. Existing MXB Local settings are retained. GitHub's automatic Source code downloads contain the source, not the Windows installer.
+          Download **MXB.Local_0.20.6-local.3_x64-setup.exe** below, close MXB Local, then run the installer. Existing MXB Local settings are retained. GitHub's automatic Source code downloads contain the source, not the Windows installer.
 
-          This is the same installer produced by the [successful Windows build and regression checks](https://github.com/Crab-Krab/mxb-local/actions/runs/40813594922), from commit `24fb7f6387639704068e5ea87d0c4eb228125dea`.
+          This is the same installer produced by the [successful Windows build and regression checks](https://github.com/Crab-Krab/mxb-local/actions/runs/40850647284), from commit `8a59578a47841be2c7d51ee889417f310c9b50ab`.
 
           ### Included
 
@@ -103,7 +127,14 @@ jobs:
           - Patched TLS dependencies and Windows DPAPI protection for saved credentials.
           - Automatic usage/game-memory reporting disabled; upstream app updates and native game-DLL installation blocked.
           - Permanent first-run setup completion fix.
-          - MXB popularity browsing using the site's current public ranking.
+          - MXB popularity browsing using the site's current public ranking, with clearer category-limit messages.
+          - MXB Local branding with an upstream source credit.
+          - Built-in voice chat excluded, including microphone access, voice commands, audio codecs and WebRTC dependencies.
+          - Setup component browser tests and archive path/link safety regressions.
+
+          The attached **SECURITY-REVIEW.md** explains the current advisory findings and which APIs/platforms they concern. Machine-readable dependency findings with source references, the Windows dependency graph, production frontend inventory and exact lockfiles are attached for review. A completed scan is not a zero-vulnerability certification.
+
+          Track download/install, gameplay, uninstall and installer replacement were manually verified with local.2. The new local.3 build has the automated checks linked above; its setup browser tests simulate native APIs.
 
           ### Limits
 
@@ -112,7 +143,7 @@ jobs:
           - Private upstream integrations and some store/geometry/server features are unavailable. Optional online features still depend on their services.
           - Updates are installed manually from this fork.
 
-          **Installer SHA256:** `3e9b648278f463c30934533fdf9cc51ac8499a1695f4ccc37db8bd3e84f3d741`
+          **Installer SHA256:** `956cd87a909388b749bd842de8b53e4117fffd74c0dba40559d91426b29909a4`
           NOTES
 
       - name: Stage and verify release assets, then publish
@@ -120,9 +151,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib, http.client, json, os, subprocess
+          import hashlib, json, os, subprocess
           from pathlib import Path
-          from urllib.parse import urlencode
           repo, tag = os.environ['GH_REPO'], os.environ['RELEASE_TAG']
           sha = os.environ['BUILD_SHA']
           def api(path, payload=None, method=None):
@@ -141,40 +171,17 @@ jobs:
           release = matching_release()
           if release is None:
               subprocess.run(['gh', 'release', 'create', tag, '--repo', repo, '--target', sha,
-                              '--title', 'MXB Local 0.20.6-local.2', '--draft', '--prerelease',
+                              '--title', 'MXB Local 0.20.6-local.3', '--draft', '--prerelease',
                               '--notes-file', 'release-notes.md',
-                              'release-assets/' + os.environ['INSTALLER'],
-                              'release-assets/SHA256SUMS.txt', 'release-assets/LICENSE'], check=True)
+                              *[str(p) for p in sorted(Path('release-assets').iterdir())]], check=True)
               release = matching_release()
           assert release is not None and release['target_commitish'] == sha
           assert release['tag_name'] == tag
           release_id = release['id']
-          asset_name = 'MXB.Local_0.20.6-local.2_x64-setup.exe'
+          asset_name = 'MXB.Local_0.20.6-local.3_x64-setup.exe'
           checksum = (os.environ['INSTALLER_SHA256'] + '  ' + asset_name + '\n').encode()
           (Path('release-assets') / 'SHA256SUMS.txt').write_bytes(checksum)
-          expected = {
-              asset_name: Path('release-assets', os.environ['INSTALLER']).read_bytes(),
-              'SHA256SUMS.txt': checksum,
-              'LICENSE': Path('release-assets/LICENSE').read_bytes(),
-          }
-          assets = {a['name']: a for a in release['assets']}
-          assert set(assets) == set(expected)
-          # GitHub normalizes spaces in uploaded asset names to dots. Repair only
-          # our initial draft's checksum text; the installer and license stay intact.
-          checksum_hash = 'sha256:' + hashlib.sha256(checksum).hexdigest()
-          if assets['SHA256SUMS.txt']['digest'] != checksum_hash:
-              assert release['draft'], 'Never replace assets on a published release'
-              assert assets['SHA256SUMS.txt']['digest'] == 'sha256:5af01ae5276ca9f556ab3ed346948c64f21ef65d2abfc93e6a3760bc272c2e43'
-              api(f"repos/{repo}/releases/assets/{assets['SHA256SUMS.txt']['id']}", method='DELETE')
-              connection = http.client.HTTPSConnection('uploads.github.com', timeout=60)
-              connection.request('POST', f'/repos/{repo}/releases/{release_id}/assets?' + urlencode({'name':'SHA256SUMS.txt'}),
-                                 body=checksum, headers={'Authorization':'Bearer ' + os.environ['GH_TOKEN'],
-                                                        'Content-Type':'text/plain', 'User-Agent':'MXB-Local-release-verifier'})
-              response = connection.getresponse()
-              data = response.read()
-              assert response.status == 201, f'Checksum upload failed: HTTP {response.status}'
-              assert json.loads(data)['digest'] == checksum_hash
-              connection.close()
+          expected = {p.name.replace(' ', '.'): p.read_bytes() for p in Path('release-assets').iterdir()}
           release = api(f'repos/{repo}/releases/{release_id}')
           assets = {a['name']: a for a in release['assets']}
           assert set(assets) == set(expected)
@@ -183,13 +190,12 @@ jobs:
               assert assets[name]['size'] == len(data)
               assert assets[name]['digest'] == 'sha256:' + hashlib.sha256(data).hexdigest(), name
           print('All staged asset sizes and SHA256 digests match the verified original files.')
-          if release['draft']:
+          if release['draft'] or release['prerelease']:
               release = api(f'repos/{repo}/releases/{release_id}', {
                   'draft': False, 'tag_name': tag, 'target_commitish': sha,
-                  'body': Path('release-notes.md').read_text(), 'prerelease': True}, method='PATCH')
-          assert not release['draft'] and release['published_at']
+                  'body': Path('release-notes.md').read_text(), 'prerelease': False, 'make_latest': 'true'}, method='PATCH')
+          assert not release['draft'] and not release['prerelease'] and release['published_at']
           published_tag = api(f'repos/{repo}/git/ref/tags/{tag}')
           assert published_tag['object']['type'] == 'commit' and published_tag['object']['sha'] == sha
           print('Published release verified:', release['html_url'])
           PY
-

@@ -127,7 +127,10 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force delivery | Out-Null
-          Copy-Item target/release/bundle/nsis/*.exe delivery/
+          $config = Get-Content apps/manager/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $installer = Join-Path target/release/bundle/nsis ("{0}_{1}_x64-setup.exe" -f $config.productName, $config.version)
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Missing expected installer: $installer" }
+          Copy-Item -LiteralPath $installer -Destination delivery/
           Copy-Item Cargo.lock,bun.lock,LOCAL-FORK.md,LICENSE delivery/
           Copy-Item .security-results/frontend-runtime-modules.json delivery/
           Get-ChildItem delivery/*.exe | Get-FileHash -Algorithm SHA256 | Format-List | Out-File delivery/SHA256.txt
