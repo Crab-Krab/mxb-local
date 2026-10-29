@@ -3729,7 +3729,7 @@ dependencies = [
 
 [[package]]
 name = "mxb-app"
-version = "0.20.6-local.1"
+version = "0.20.6-local.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

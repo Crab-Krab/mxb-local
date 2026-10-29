@@ -3,9 +3,10 @@
 This is an independent Windows build of Frostn1/mxb-app v0.20.6. It keeps the
 upstream MIT license and attribution. It is not an official Frost/mxbsecure release.
 
-**Build status: Windows installer produced successfully. Two Windows DPAPI tests,
-three backend security tests, and twelve browser sanitizer regressions passed.
-The actual desktop app still needs a smoke test with your MX Bikes installation.**
+**Build status: local.1 built and passed 17 targeted security tests. Local testing
+confirmed OEM bikes in Library and track descriptions, after repairing a first-run
+completion bug. local.2 includes that setup fix and a popularity-list compatibility
+fix; its new Windows build and regression checks must pass before installation.**
 
 ## What changes
 
@@ -27,6 +28,18 @@ The actual desktop app still needs a smoke test with your MX Bikes installation.
   available. Closing the app exits it by default.
 - Name: **MXB Local**. Settings: `%LOCALAPPDATA%\local.mxb.manager`.
   It does not import or overwrite the original app's settings or cookies.
+
+## Changes in local.2
+
+- Complete app-only setup before opening the dashboard, for detected or manually
+  selected folders. Six setup regressions cover ordering, persistence and failures.
+- MXB popularity uses the site's current public top-100 overall ranking, narrowed
+  by category and kept in the site's ranked order. An on-screen notice explains
+  the limit. This replaces a removed REST endpoint that now returns 404. The
+  rankings are parsed as data; their HTML is never inserted into the app UI.
+- Ranked links are restricted to the site's HTTPS origin; malformed/executable
+  links and oversized pages are rejected. Category metadata and pagination are
+  checked, and cached results avoid repeated ranking requests while paging.
 
 ## Features and limits
 

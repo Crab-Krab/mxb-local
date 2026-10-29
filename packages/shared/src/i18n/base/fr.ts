@@ -106,6 +106,7 @@ export const fr: Record<keyof typeof en, string> = {
   "browseCat.bootPaints": "Décos bottes",
   "browseCat.protection": "Protections",
   "browseCat.protectionPaints": "Décos protections",
+  "browse.popularLimited": "La popularité utilise le top 100 du site entier. Les filtres de catégorie restreignent cette liste.",
   "browseSort.newest": "Plus récents",
   "browseSort.oldest": "Plus anciens",
   "browseSort.popularAll": "Plus populaires",

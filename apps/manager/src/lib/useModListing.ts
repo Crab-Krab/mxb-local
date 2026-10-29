@@ -7,7 +7,7 @@ import {
   type ModSort,
   type ModType,
 } from "@frost/shared/api/mods";
-import type { ModRating, ModSummary } from "@frost/shared/types";
+import type { GameId, ModRating, ModSummary } from "@frost/shared/types";
 import { clearListings, listingKey, readListing, writeListing } from "./listingCache";
 import { reportSearchMiss } from "./searchMiss";
 
@@ -29,7 +29,7 @@ interface CachedPage {
  * calls *above* that swap, nothing unmounts: coming back re-renders the grid that is
  * already in memory, with no refetch at all.
  */
-export function useModListing(modType: ModType, enabled = true) {
+export function useModListing(modType: ModType, enabled = true, game: GameId = "mxb") {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [categoryId, setCategoryId] = useState(modType.categoryId);
@@ -201,6 +201,7 @@ export function useModListing(modType: ModType, enabled = true) {
     sortOptions,
     /** The order on screen, which is `newest` when the pick isn't currently offered. */
     activeSort,
+    popularLimited: game === "mxb" && activeSort.startsWith("popular"),
     mods,
     ratings,
     hasMore,

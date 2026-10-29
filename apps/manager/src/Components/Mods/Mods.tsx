@@ -397,6 +397,9 @@ export default function Mods({
 
         {browsing && source !== "mods" && (
           <div className="flex min-h-0 flex-1 flex-col">
+            {modsOn && listing.popularLimited && (
+              <p className="mx-7 mb-4 text-[12.5px] text-muted-foreground">{t("browse.popularLimited")}</p>
+            )}
             {showStale && (
               <div
                 className={cn(

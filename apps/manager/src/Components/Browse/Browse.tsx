@@ -185,6 +185,9 @@ export default function Browse({
         onScroll={(e) => (scrollTop.current = e.currentTarget.scrollTop)}
         className="min-h-0 flex-1 overflow-y-auto px-7 pb-6"
       >
+        {listing.popularLimited && (
+          <p className="mb-4 text-[12.5px] text-muted-foreground">{t("browse.popularLimited")}</p>
+        )}
         {error ? (
           <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-20 text-center">
             <p className="text-[13px] font-semibold text-destructive">

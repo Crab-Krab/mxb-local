@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 
 const PER_PAGE: &str = "24";
 
+mod popular_page;
+
 /// The mods catalog for whichever game is active.
 ///
 /// mxb-mods.com and gpb-mods.com are the same WordPress build by the same author — same
@@ -688,6 +690,11 @@ async fn total_count(q: &str, category_id: u32) -> anyhow::Result<u32> {
 /// differences are `limit`/`offset` instead of `page`, and that paging past the end
 /// returns an empty list rather than a 400.
 async fn popular(category_id: u32, page: u32, range: &str) -> anyhow::Result<Vec<ModSummary>> {
+    // MXB replaced WordPress Popular Posts with dmkrtz-post-views. Its old REST
+    // route now returns rest_no_route; use the rankings the site publishes instead.
+    if mxb_session::base() == mxb_session::MXB_SITE.base {
+        return popular_page::search(category_id, page, range).await;
+    }
     let url = format!(
         "{}{}",
         mxb_session::base(),

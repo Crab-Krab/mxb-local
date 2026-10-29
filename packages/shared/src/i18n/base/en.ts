@@ -112,6 +112,7 @@ export const en = {
   "browseCat.bootPaints": "Boot Paints",
   "browseCat.protection": "Protection",
   "browseCat.protectionPaints": "Protection Paints",
+  "browse.popularLimited": "Popularity uses the site's top 100 overall. Category filters narrow that list.",
   "browseSort.newest": "Newest",
   "browseSort.oldest": "Oldest",
   "browseSort.popularAll": "Most popular",

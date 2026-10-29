@@ -106,6 +106,7 @@ export const it: Record<keyof typeof en, string> = {
   "browseCat.bootPaints": "Grafiche stivali",
   "browseCat.protection": "Protezioni",
   "browseCat.protectionPaints": "Grafiche protezioni",
+  "browse.popularLimited": "La popolarità usa i primi 100 di tutto il sito. I filtri di categoria restringono questa lista.",
   "browseSort.newest": "Più recenti",
   "browseSort.oldest": "Meno recenti",
   "browseSort.popularAll": "Più popolari",

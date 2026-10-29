@@ -106,6 +106,7 @@ export const ptBR: Record<keyof typeof en, string> = {
   "browseCat.bootPaints": "Pinturas de botas",
   "browseCat.protection": "Proteções",
   "browseCat.protectionPaints": "Pinturas de proteções",
+  "browse.popularLimited": "A popularidade usa os 100 primeiros de todo o site. Os filtros de categoria reduzem essa lista.",
   "browseSort.newest": "Mais recentes",
   "browseSort.oldest": "Mais antigos",
   "browseSort.popularAll": "Mais populares",
