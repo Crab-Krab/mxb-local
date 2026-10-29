@@ -10,6 +10,8 @@ python scripts/prepare-local-dependencies.py
 if ($LASTEXITCODE -ne 0) { throw 'Dependency preparation failed.' }
 bun install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed.' }
+bun test apps/manager/test/finishSetup.test.mjs
+if ($LASTEXITCODE -ne 0) { throw 'First-run setup regression tests failed.' }
 bun run --cwd apps/manager build
 if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
 cargo test --locked -p mxb-core secret_store::tests --lib

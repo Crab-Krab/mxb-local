@@ -27,6 +27,7 @@ import { useFrostmod } from "@/Context/FrostmodContext";
 import { LoadingMark } from "../Shell/LoadingMark";
 import Progress from "./Progress";
 import { Mxbmrp3Prompt } from "../Mxbmrp3/Mxbmrp3Suggestion";
+import { finishSetup } from "@/lib/finishSetup.mjs";
 
 const GAME_LOGOS: Record<string, string> = {
   mxb: "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/655500/logo.png",
@@ -176,9 +177,12 @@ export default function Setup({ onComplete, game, games, firstRun }: SetupProps)
       setBusy(true);
       setError(null);
       try {
-        await createConfig({ modsPath, gamePath: gamePath ?? "", activeGame: picked.id });
-        if (askIntegration) setPhase("integration");
-        else onComplete();
+        await finishSetup({
+          saveFolders: () => createConfig({ modsPath, gamePath: gamePath ?? "", activeGame: picked.id }),
+          completeSetup,
+          onComplete,
+          onIntegration: askIntegration ? () => setPhase("integration") : undefined,
+        });
       } catch (e) {
         setError(String(e));
         setBusy(false);
@@ -198,13 +202,12 @@ export default function Setup({ onComplete, game, games, firstRun }: SetupProps)
     if (attempted.current) return;
     attempted.current = true;
     let cancelled = false;
-    createConfig({ modsPath: "", gamePath: gamePath ?? "", activeGame: picked.id })
-      .then(() => {
-        if (!cancelled) {
-          if (askIntegration) setPhase("integration");
-          else onComplete();
-        }
-      })
+    finishSetup({
+      saveFolders: () => createConfig({ modsPath: "", gamePath: gamePath ?? "", activeGame: picked.id }),
+      completeSetup,
+      onComplete: async () => { if (!cancelled) await onComplete(); },
+      onIntegration: askIntegration ? () => { if (!cancelled) setPhase("integration"); } : undefined,
+    })
       .catch(() => {
         // Nothing to report: not finding the folder is exactly what the next step is for.
         if (!cancelled) setPhase("folders");
