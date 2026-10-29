@@ -122,26 +122,7 @@ md-5 = "0.10"
 # binary and decoded on the stack at use, so they don't show up in a `strings` dump.
 obfstr = "0.4"
 tauri-plugin-deep-link = "2.4.9"
-# Microphone capture and playback for voice chat (WASAPI on Windows, CoreAudio on macOS).
-#
-# Held at 0.15 deliberately: 0.18 does not build for Windows in this workspace. Its WASAPI
-# backend implements COM interfaces against a newer `windows-core` than the one Cargo
-# unifies on here (Tauri pulls the `windows` crates in too), so `IMMNotificationClient`
-# and friends fail their `Interface`/`RuntimeName` bounds — 18 errors, none of them ours.
-# 0.15 vendors its own `windows 0.54` and sidesteps the conflict entirely. Check
-# `cargo check --target x86_64-pc-windows-gnu` before raising this; a macOS build won't
-# catch it, and a Windows-first app can't ship without it.
-cpal = "0.15"
-
-# The rest of voice: the codec, the peer-to-peer transport, and the socket that introduces
-# two apps to each other.
-#
-# `str0m` is sans-IO WebRTC — we own the UDP socket and the loop, it owns ICE, DTLS and the
-# data channel. `rust-crypto` rather than the default backend so there is no OpenSSL or
-# aws-lc to build: the whole stack cross-compiles to Windows with nothing installed.
-str0m = { version = "0.23", default-features = false, features = ["rust-crypto"] }
-# libopus, vendored and built from source by `opusic-sys` — no system library to find.
-opus = "0.4"
+# WebSocket transport is still used by paint sync. Voice audio/WebRTC are excluded.
 # Signalling is one long-lived WebSocket carrying a few KB per join, so it is the blocking
 # client on its own thread rather than an async one: the voice subsystem is threads and
 # channels throughout (see `Monitor`), and a second runtime would buy nothing.
@@ -166,10 +147,6 @@ libloading = "0.8"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSFileManager", "NSURL", "NSError", "NSString"] }
-# Whether macOS has actually granted this app the microphone. cpal will happily open a
-# stream that never delivers a sample when it hasn't, which reads as "the mic test is
-# broken" rather than as "the OS is refusing" — so we ask, and say so.
-objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

@@ -58,7 +58,7 @@ def main():
         package = hit['query']
         for match in hit['vulns']:
             advisory = by_id[match['id']]
-            informational = advisory.get('database_specific', {}).get('informational')
+            informational = advisory.get('database_specific', {}).get('informational') or next((a.get('database_specific', {}).get('informational') for a in advisory.get('affected', []) if a.get('database_specific', {}).get('informational')), None)
             status = 'withdrawn' if advisory.get('withdrawn') else 'informational' if informational else 'review-required'
             summary.append({'package': package, 'id': advisory['id'], 'status': status,
                             'summary': advisory.get('summary', ''), 'informational': informational})

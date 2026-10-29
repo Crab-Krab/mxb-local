@@ -73,11 +73,6 @@ import {
   type WineHostInfo,
   experimentalState as experimentalStateApi,
   type ExperimentalState,
-  voiceDevices,
-  voiceMute,
-  voiceStatus,
-  setVoiceProximity,
-  setVoiceEnabled,
   setMxbsecureEnabled,
   contentSecureAvailable,
   mxbsecureUnlock,
@@ -89,20 +84,6 @@ import {
   steamLinkStatus,
   mxbsecureStatus,
   type SecureStatusItem,
-  setVoiceInputDevice,
-  setVoiceOutputDevice,
-  setVoicePttHotkey,
-  setVoiceLevels,
-  voiceMeterStart,
-  voiceMeterStop,
-  onVoiceInputDead,
-  voiceTestOutput,
-  onVoiceStatus,
-  onVoiceInputLevel,
-  onVoicePtt,
-  setVoiceToggleToTalk,
-  type VoiceDevices,
-  type VoiceStatus,
 } from "@frost/shared/api/mods";
 import {
   AlertDialog,
@@ -189,7 +170,6 @@ export type SectionId =
   | "general"
   | "downloads"
   | "overlay"
-  | "voice"
   | "appearance"
   | "frostmod"
   | "reshade"
@@ -229,7 +209,6 @@ const GROUPS: {
     sections: [
       { id: "paintsync", label: "settings.paintSync" },
       { id: "frostmod", label: "settings.frostmod" },
-      { id: "voice", label: "voice.section" },
       { id: "overlay", label: "overlay.section" },
     ],
   },
@@ -273,18 +252,6 @@ const ADVANCED_SECTIONS = new Set<SectionId>(["reshade", "plugins", "secure", "l
 
 /** Default shown before the backend answers, so the field is never blank. */
 const FALLBACK_HOTKEY = "CommandOrControl+Shift+X";
-
-/** Default push-to-talk combo shown before the backend answers. Mirrors
- *  `DEFAULT_PTT_HOTKEY` in config.rs. */
-const FALLBACK_PTT_HOTKEY = "CommandOrControl+Shift+V";
-
-/** Stands in for the empty string in the device pickers.
- *
- * The config stores `""` to mean "follow the system default", but Radix reserves the empty
- * string for *no selection* — an item valued `""` never reads as selected and can't be told
- * apart from the placeholder. The sentinel only exists inside the Select; it is mapped back
- * to `""` before anything is saved. */
-const DEVICE_DEFAULT = "__system_default__";
 
 /** How often the overlay's live state (game up? screen owned?) is re-read while
  *  Settings is on screen. Slow enough to be free, quick enough that alt-tabbing out of
@@ -643,9 +610,6 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
   const autoUpdates = config.autoUpdates ?? true;
   const overlayEnabled = config.overlayEnabled ?? true;
   const overlayHotkey = config.overlayHotkey || FALLBACK_HOTKEY;
-  // Same shape as the overlay pair above: the config's fields are optional (an install
-  // predating voice has none), so every read is defaulted here rather than at each use.
-  const voiceEnabled = config.voiceEnabled ?? false;
   // Off unless it was turned on, matching the backend's default.
   const paintSyncEnabled = config.paintSyncEnabled ?? false;
   const mxbsecureEnabled = config.mxbsecureEnabled ?? true;
@@ -700,13 +664,6 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
     // Re-read the list so a freshly owned file flips to Unlocked without a restart.
     onUnlocked: () => void mxbsecureStatus().then(setSecureItems).catch(() => {}),
   });
-  const voiceInput = config.voiceInputDevice ?? "";
-  const voiceOutput = config.voiceOutputDevice ?? "";
-  const voicePtt = config.voicePttHotkey || FALLBACK_PTT_HOTKEY;
-  const voiceGain = config.voiceInputGain ?? 1;
-  const voiceToggle = config.voiceToggleToTalk ?? false;
-  const voiceVolume = config.voiceOutputVolume ?? 1;
-  const voiceProximity = config.voiceProximity ?? true;
 
   // What the overlay is doing right now: is the game up, does something else own the
   // screen, and did the hotkey actually bind. A shortcut that never registered has
@@ -757,194 +714,6 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
       toast.success(t("overlay.shortcutUpdated"));
     } catch (e) {
       toast.error(t("overlay.shortcutRejected"), { description: String(e) });
-    }
-  };
-
-  // ---- voice ------------------------------------------------------------------
-  // Devices are re-read on mount and whenever the section is opened rather than cached:
-  // the headset a player is asking about is usually the one they just plugged in.
-  const [devices, setDevices] = useState<VoiceDevices | null>(null);
-  const [micTesting, setMicTesting] = useState(false);
-  const [micLevel, setMicLevel] = useState(0);
-  // Whether the mic key currently has the mic open. Shown because in toggle mode there is
-  // nothing physical to tell you — you can walk away from a latched-open microphone.
-  const [micOpen, setMicOpen] = useState(false);
-  // Who else is in voice. Pushed from the engine, so this is live without polling.
-  const [voice, setVoice] = useState<VoiceStatus>({
-    joined: false,
-    server: "",
-    peers: [],
-    error: null,
-  });
-
-  const refreshDevices = useCallback(async () => {
-    try {
-      setDevices(await voiceDevices());
-    } catch {
-      // A machine with no audio stack at all. The section shows the empty state.
-      setDevices({ inputs: [], outputs: [], error: null });
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshDevices();
-  }, [refreshDevices]);
-
-  // The meter is a live mic. It must never outlive the page that opened it — leaving it
-  // running would keep the microphone open behind a settings screen nobody is looking at.
-  useEffect(() => {
-    if (!micTesting) return;
-    let un: (() => void) | undefined;
-    let unDead: (() => void) | undefined;
-    void onVoiceInputLevel(({ rms }) => setMicLevel(rms)).then((f) => (un = f));
-    // A bar that never moves is the same picture whether the mic is muted or the OS is
-    // refusing us. This is the engine telling us which, so the page can say it.
-    void onVoiceInputDead((message) => {
-      toast.error(t("voice.micFailed"), { description: message, duration: 12000 });
-      setMicTesting(false);
-    }).then((f) => (unDead = f));
-    return () => {
-      un?.();
-      unDead?.();
-      void voiceMeterStop();
-    };
-  }, [micTesting, t]);
-
-  useEffect(() => {
-    return () => {
-      void voiceMeterStop();
-    };
-  }, []);
-
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    void onVoicePtt(setMicOpen).then((f) => (un = f));
-    return () => un?.();
-  }, []);
-
-  // The room, as it changes. Asked once for the first paint, then pushed — a rider joining
-  // mid-session should appear without the page having to ask.
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    void voiceStatus().then(setVoice).catch(() => {});
-    void onVoiceStatus(setVoice).then((f) => (un = f));
-    return () => un?.();
-  }, []);
-
-  const toggleMute = useCallback((peerId: string, muted: boolean) => {
-    // Optimistic: the engine is authoritative, but its next status push is up to 20 ms away
-    // and a mute button that lags is a mute button people press twice.
-    setVoice((v) => ({
-      ...v,
-      peers: v.peers.map((p) => (p.peerId === peerId ? { ...p, muted } : p)),
-    }));
-    void voiceMute(peerId, muted);
-  }, []);
-
-  // Navigating to another section closes the meter with it. The state that drives it lives
-  // up here rather than in the section, so without this a mic left testing would keep
-  // recording behind a pane that isn't even on screen. Retained navigation also means the
-  // whole Settings screen can be hidden without unmounting, so leaving Settings closes it too.
-  useEffect(() => {
-    if (!viewActive || active !== "voice") setMicTesting(false);
-  }, [viewActive, active]);
-
-  const toggleVoice = async (v: boolean) => {
-    try {
-      await setVoiceEnabled(v);
-      if (!v) setMicTesting(false);
-      await reloadConfig();
-    } catch (e) {
-      toast.error(t("voice.registerFailed"), { description: String(e) });
-      await reloadConfig();
-    }
-  };
-
-  const toggleProximity = async (v: boolean) => {
-    try {
-      await setVoiceProximity(v);
-      await reloadConfig();
-    } catch (e) {
-      toast.error(t("voice.registerFailed"), { description: String(e) });
-      await reloadConfig();
-    }
-  };
-
-  const changeMicMode = async (mode: string) => {
-    try {
-      await setVoiceToggleToTalk(mode === "toggle");
-      await reloadConfig();
-    } catch (e) {
-      toast.error(t("settings.updateFailed"), { description: String(e) });
-    }
-  };
-
-  const rebindPtt = async (accelerator: string) => {
-    try {
-      await setVoicePttHotkey(accelerator);
-      await reloadConfig();
-      toast.success(t("voice.pttUpdated"));
-    } catch (e) {
-      toast.error(t("overlay.shortcutRejected"), { description: String(e) });
-    }
-  };
-
-  const pickInput = async (name: string) => {
-    try {
-      await setVoiceInputDevice(name === DEVICE_DEFAULT ? "" : name);
-      await reloadConfig();
-      // A running meter is listening to the old device; restart it on the new one.
-      if (micTesting) {
-        await voiceMeterStop();
-        await voiceMeterStart();
-      }
-    } catch (e) {
-      toast.error(t("settings.updateFailed"), { description: String(e) });
-    }
-  };
-
-  const pickOutput = async (name: string) => {
-    try {
-      await setVoiceOutputDevice(name === DEVICE_DEFAULT ? "" : name);
-      await reloadConfig();
-    } catch (e) {
-      toast.error(t("settings.updateFailed"), { description: String(e) });
-    }
-  };
-
-  const toggleMicTest = async () => {
-    if (micTesting) {
-      setMicTesting(false);
-      setMicLevel(0);
-      await voiceMeterStop();
-      return;
-    }
-    try {
-      const warning = await voiceMeterStart();
-      setMicTesting(true);
-      // The saved headset is gone and we fell back. Silently going mute is the failure
-      // that reads as "voice chat is broken", so it gets said out loud.
-      if (warning) toast.warning(t("voice.deviceGone"), { description: warning });
-    } catch (e) {
-      toast.error(t("voice.micFailed"), { description: String(e) });
-    }
-  };
-
-  const testOutput = async () => {
-    try {
-      const warning = await voiceTestOutput();
-      if (warning) toast.warning(t("voice.deviceGone"), { description: warning });
-    } catch (e) {
-      toast.error(t("voice.outputFailed"), { description: String(e) });
-    }
-  };
-
-  const changeLevels = async (gain: number, volume: number) => {
-    try {
-      await setVoiceLevels(gain, volume);
-      await reloadConfig();
-    } catch (e) {
-      toast.error(t("settings.updateFailed"), { description: String(e) });
     }
   };
 
@@ -2023,273 +1792,6 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
               </span>{" "}
               {t("overlay.notWorkingDesc")}
             </p>
-          </Section>
-          )}
-
-          {/* voice — devices, levels and the mic key. The transport that carries any of
-              this to other riders isn't built yet, which the callout says plainly rather
-              than leaving a page that looks finished and does nothing.
-
-              The labels carry this section on their own: "Microphone" beside a device
-              picker doesn't need a line under it explaining that it picks a microphone. */}
-          {active === "voice" && (
-          <Section title={t("voice.section")}>
-            <ToggleRow
-              label={t("voice.enable")}
-              checked={voiceEnabled}
-              onChange={toggleVoice}
-            />
-
-            {/* The reason to use this over a call with your mates. Off is a real choice —
-                a race director wants everyone equally loud — so it is a switch, not a
-                property of the feature. */}
-            <ToggleRow
-              label={t("voice.proximity")}
-              desc={t("voice.proximityDesc")}
-              checked={voiceProximity}
-              onChange={toggleProximity}
-              disabled={!voiceEnabled}
-            />
-
-            {devices?.error && (
-              <Callout tone="warning" title={t("voice.noDevices")}>
-                {devices.error}
-              </Callout>
-            )}
-
-            {/* The room. Nothing here is a control except mute: joining happens because
-                the rider is on a server, which is the whole point of the feature. */}
-            {voiceEnabled && (
-              <div className="space-y-2 rounded-lg bg-background p-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full",
-                      voice.joined ? "bg-success" : "bg-foreground/25",
-                    )}
-                  />
-                  <span className="text-[12.5px] text-foreground/85">
-                    {voice.joined ? t("voice.inRoom", { server: voice.server }) : t("voice.notConnected")}
-                  </span>
-                </div>
-
-                {voice.error && (
-                  <Callout tone="warning" title={t("voice.stopped")}>
-                    {voice.error}
-                  </Callout>
-                )}
-
-                {voice.peers.length === 0 ? (
-                  <p className="text-[12px] leading-relaxed text-muted-foreground">
-                    {t("voice.notConnectedDesc")}
-                  </p>
-                ) : (
-                  <ul className="space-y-1">
-                    {voice.peers.map((peer) => (
-                      <li key={peer.peerId} className="flex items-center gap-2">
-                        {/* Talking is the one thing worth seeing at a glance, so it is a
-                            colour change on the row rather than an icon to look for. */}
-                        <span
-                          className={cn(
-                            "size-1.5 shrink-0 rounded-full",
-                            !peer.connected
-                              ? "bg-foreground/25"
-                              : peer.talking
-                                ? "bg-success"
-                                : "bg-foreground/40",
-                          )}
-                        />
-                        <span
-                          className={cn(
-                            "flex-1 truncate text-[12.5px]",
-                            peer.muted ? "text-muted-foreground line-through" : "text-foreground/85",
-                          )}
-                        >
-                          {peer.riderName || t("voice.unnamedRider")}
-                          {peer.raceNum > 0 && (
-                            <span className="ml-1.5 text-muted-foreground">#{peer.raceNum}</span>
-                          )}
-                        </span>
-                        {!peer.connected && (
-                          <span className="text-[11px] text-muted-foreground">
-                            {t("voice.connecting")}
-                          </span>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-[11px]"
-                          onClick={() => toggleMute(peer.peerId, !peer.muted)}
-                        >
-                          {peer.muted ? t("voice.unmute") : t("voice.mute")}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            <div className="h-px bg-border" />
-
-            {/* Microphone. "" is a real, selectable value — it means "follow whatever
-                Windows is set to", which keeps tracking a default the player changes
-                later. Storing the resolved name would freeze it instead. */}
-            <div className="flex items-center justify-between gap-6">
-              <span className="text-[12.5px] text-foreground/85">{t("voice.microphone")}</span>
-              <Select
-                value={voiceInput || DEVICE_DEFAULT}
-                onValueChange={pickInput}
-                disabled={!voiceEnabled}
-              >
-                <SelectTrigger className="h-8 w-[220px]" onClick={() => void refreshDevices()}>
-                  <SelectValue placeholder={t("voice.systemDefault")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={DEVICE_DEFAULT}>{t("voice.systemDefault")}</SelectItem>
-                  {devices?.inputs.map((d) => (
-                    <SelectItem key={d.name} value={d.name}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* The single most useful control here: "can it hear me" is most of what
-                anyone needs answered, and a meter answers it without a second person. */}
-            <div className="flex items-center gap-3">
-              <div className="h-2 flex-1 overflow-hidden rounded-full bg-foreground/[0.08]">
-                <div
-                  className={cn(
-                    "h-full rounded-full transition-[width] duration-75",
-                    micLevel > 0.85 ? "bg-warning" : "bg-success",
-                  )}
-                  style={{ width: `${Math.min(100, Math.round(micLevel * 140))}%` }}
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleMicTest}
-                disabled={!voiceEnabled}
-              >
-                {micTesting ? (
-                  <>
-                    <Square className="size-3.5" /> {t("voice.stopTest")}
-                  </>
-                ) : (
-                  <>
-                    <Play className="size-3.5" /> {t("voice.testMic")}
-                  </>
-                )}
-              </Button>
-            </div>
-            {micTesting && (
-              <span className="-mt-1 text-[11.5px] text-muted-foreground">
-                {t("voice.speakNow")}
-              </span>
-            )}
-
-            <div className="h-px bg-border" />
-
-            {/* Output, deliberately separate from game audio: voice on the headset with
-                the game on speakers is a setup people actually run. */}
-            <div className="flex items-center justify-between gap-6">
-              <span className="text-[12.5px] text-foreground/85">{t("voice.output")}</span>
-              <Select
-                value={voiceOutput || DEVICE_DEFAULT}
-                onValueChange={pickOutput}
-                disabled={!voiceEnabled}
-              >
-                <SelectTrigger className="h-8 w-[220px]" onClick={() => void refreshDevices()}>
-                  <SelectValue placeholder={t("voice.systemDefault")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={DEVICE_DEFAULT}>{t("voice.systemDefault")}</SelectItem>
-                  {devices?.outputs.map((d) => (
-                    <SelectItem key={d.name} value={d.name}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <span className="text-[11.5px] text-muted-foreground">
-                {t("voice.testOutputDesc")}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={testOutput}
-                disabled={!voiceEnabled}
-              >
-                <Play className="size-3.5" /> {t("voice.testOutput")}
-              </Button>
-            </div>
-
-            <div className="h-px bg-border" />
-
-            <LevelSlider
-              label={t("voice.micGain")}
-              value={voiceGain}
-              min={0}
-              max={2}
-              disabled={!voiceEnabled}
-              onCommit={(v) => changeLevels(v, voiceVolume)}
-            />
-            <LevelSlider
-              label={t("voice.volume")}
-              value={voiceVolume}
-              min={0}
-              max={1}
-              disabled={!voiceEnabled}
-              onCommit={(v) => changeLevels(voiceGain, v)}
-            />
-
-            <div className="h-px bg-border" />
-
-            {/* Hold or latch. Push-to-talk is the default because it cannot leave a
-                microphone open by accident; toggle can, which is why the live indicator
-                below exists. */}
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex flex-col gap-1">
-                <span className="text-[12.5px] text-foreground/85">{t("voice.micMode")}</span>
-                <span className="text-[11.5px] leading-relaxed text-muted-foreground">
-                  {voiceToggle ? t("voice.toggleDesc") : t("voice.pttDesc")}
-                </span>
-              </div>
-              <Segmented
-                size="sm"
-                value={voiceToggle ? "toggle" : "ptt"}
-                onChange={changeMicMode}
-                options={[
-                  { value: "ptt", label: t("voice.modePush") },
-                  { value: "toggle", label: t("voice.modeToggle") },
-                ]}
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-6">
-              <span className="flex items-center gap-2 text-[12.5px] text-foreground/85">
-                {t("voice.micKey")}
-                {/* Live, and deliberately loud in toggle mode: a latched mic has nothing
-                    physical to remind you it is open. */}
-                {voiceEnabled && micOpen && (
-                  <span className="flex items-center gap-1.5 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-semibold text-success">
-                    <span className="size-[6px] rounded-full bg-success" />
-                    {t("voice.micOpen")}
-                  </span>
-                )}
-              </span>
-              <HotkeyField
-                value={voicePtt}
-                onCapture={rebindPtt}
-                disabled={!voiceEnabled}
-              />
-            </div>
           </Section>
           )}
 

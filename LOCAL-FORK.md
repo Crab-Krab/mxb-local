@@ -30,6 +30,16 @@ wording correction explains this case without claiming the category is empty.**
 - Name: **MXB Local**. Settings: `%LOCALAPPDATA%\local.mxb.manager`.
   It does not import or overwrite the original app's settings or cookies.
 
+## Changes in local.3
+
+- MXB Local branding with an upstream source credit.
+- Clearer empty results when a category has no entries in the overall top 100.
+- Built-in voice chat is excluded: no microphone capture, voice hotkeys, audio
+  test commands, voice supervisor, codec or WebRTC dependencies are built. Shared
+  account/server helpers remain for other optional features.
+- Browser tests exercise the actual setup screen with simulated native APIs;
+  Windows archive tests verify rejection of unsafe paths and links.
+
 ## Changes in local.2
 
 - Complete app-only setup before opening the dashboard, for detected or manually
@@ -98,4 +108,3 @@ The checked-in Cargo.lock and bun.lock are the versions from the verified build.
 No audit or patch can guarantee that a large application has no remaining security
 issues. A successful build and a smoke test with a disposable game profile are
 required before using this fork for your regular mod collection.
-

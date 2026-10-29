@@ -605,7 +605,9 @@ fn migrate_setup_complete(cfg: &mut AppConfig, field_was_present: bool) -> bool 
 /// Returns whether it changed anything, so the caller can write it down: a migration left
 /// in memory is decided — and logged — again on every read.
 pub fn migrate(cfg: &mut AppConfig) -> bool {
-    let mut changed = false;
+    let mut changed = cfg.voice_enabled;
+    // MXB Local excludes voice audio and transport, including on upgraded configs.
+    cfg.voice_enabled = false;
     // The one-shot described on `paint_sync_rev`. A config that never had the field is at
     // rev 0 too, and forcing an already-off setting off is a no-op, so this needs no way to
     // tell those two apart.

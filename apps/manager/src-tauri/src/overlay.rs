@@ -52,10 +52,7 @@ fn bind<R: Runtime>(app: &AppHandle<R>, cfg: &config::AppConfig) -> Result<(), S
         Ok(())
     };
 
-    // Bound even when the overlay is off — the two features are unrelated.
-    let ptt_result = crate::voice::bind_ptt(app, cfg);
-
-    overlay_result.and(ptt_result)
+    overlay_result
 }
 
 /// Current overlay settings plus what the game is doing right now.

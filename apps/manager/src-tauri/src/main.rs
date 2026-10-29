@@ -205,6 +205,7 @@ fn parks_on_close(painted: bool, run_in_background: bool) -> bool {
 /// So both get an allowlist of exactly one call: emitting their result event. Every other
 /// window is unaffected and keeps whatever its own capability file grants.
 fn ipc_allowed(label: &str, command: &str) -> bool {
+    if command.starts_with("voice_") || command.starts_with("set_voice_") { return false; }
     match label {
         MAIN_WINDOW | "overlay" => !matches!(command,
             "plugin_install" | "plugin_install_payload"),
@@ -6582,35 +6583,6 @@ fn set_overlay_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
     overlay::register(&app, &cfg)
 }
 
-/// Every microphone and speaker the machine currently offers.
-///
-/// Not cached: the point is to notice the headset plugged in after the app launched.
-#[tauri::command]
-fn voice_devices() -> voice::Devices {
-    voice::devices()
-}
-
-/// Turn voice chat on or off. Rebinds shortcuts, since push-to-talk only exists while it's on.
-#[tauri::command]
-fn set_voice_enabled(
-    app: tauri::AppHandle,
-    monitor: State<voice::Monitor>,
-    session: State<voice::session::Session>,
-    enabled: bool,
-) -> Result<(), String> {
-    let mut cfg = config::load(&app).unwrap_or_default();
-    cfg.voice_enabled = enabled;
-    config::save(&app, &cfg).map_err(|e| format!("{e:#}"))?;
-    // Turning voice off must close the microphone, not just stop transmitting from it — and
-    // it must do so now. The supervisor would notice within a few seconds, which is the
-    // wrong answer to "I turned it off, is my mic still open?".
-    if !enabled {
-        monitor.stop();
-        session.leave();
-    }
-    overlay::register(&app, &cfg)
-}
-
 /// Turn paint sync on or off.
 ///
 /// Off stops both halves at once — nothing of this rider's look goes up, and nothing anyone
@@ -6660,123 +6632,6 @@ fn set_preview_tyres(app: tauri::AppHandle, tyres: String) -> Result<(), String>
     let mut cfg = config::load(&app).unwrap_or_default();
     cfg.preview_tyres = tyres;
     config::save(&app, &cfg).map_err(|e| format!("{e:#}"))
-}
-
-/// Pick the microphone. A blank name means "follow the system default".
-#[tauri::command]
-fn set_voice_input_device(app: tauri::AppHandle, device: String) -> Result<(), String> {
-    let mut cfg = config::load(&app).unwrap_or_default();
-    cfg.voice_input_device = device;
-    config::save(&app, &cfg).map_err(|e| format!("{e:#}"))
-}
-
-/// Pick where other riders come out. A blank name means "follow the system default".
-#[tauri::command]
-fn set_voice_output_device(app: tauri::AppHandle, device: String) -> Result<(), String> {
-    let mut cfg = config::load(&app).unwrap_or_default();
-    cfg.voice_output_device = device;
-    config::save(&app, &cfg).map_err(|e| format!("{e:#}"))
-}
-
-/// Rebind push-to-talk. Registers before saving, so a combo another app owns leaves the
-/// working one in place — same contract as the overlay hotkey.
-#[tauri::command]
-fn set_voice_ptt_hotkey(app: tauri::AppHandle, hotkey: String) -> Result<(), String> {
-    let previous = config::load(&app).unwrap_or_default();
-    let mut cfg = previous.clone();
-    cfg.voice_ptt_hotkey = hotkey;
-    if let Err(e) = overlay::register(&app, &cfg) {
-        let _ = overlay::register(&app, &previous);
-        return Err(e);
-    }
-    config::save(&app, &cfg).map_err(|e| format!("{e:#}"))?;
-    // Coach keeps its own combo; tell it ours changed so it re-checks whether they collide.
-    if let Some(link) = mxb_core::overlay::link(&app) {
-        link.send(&mxb_core::overlaylink::Msg::Rebind { error: None });
-    }
-    Ok(())
-}
-
-/// Switch between push-to-talk and toggle. Rebinds, since the two modes differ only in
-/// which key edges the handler acts on.
-#[tauri::command]
-fn set_voice_toggle_to_talk(app: tauri::AppHandle, toggle: bool) -> Result<(), String> {
-    let mut cfg = config::load(&app).unwrap_or_default();
-    cfg.voice_toggle_to_talk = toggle;
-    config::save(&app, &cfg).map_err(|e| format!("{e:#}"))?;
-    overlay::register(&app, &cfg)
-}
-
-/// Set mic gain and playback volume together — they're one slider pair in the UI, and
-/// saving them separately would write the config file twice for one drag.
-#[tauri::command]
-fn set_voice_levels(
-    app: tauri::AppHandle,
-    session: State<voice::session::Session>,
-    input_gain: f32,
-    output_volume: f32,
-) -> Result<(), String> {
-    let mut cfg = config::load(&app).unwrap_or_default();
-    cfg.voice_input_gain = input_gain.clamp(0.0, 4.0);
-    cfg.voice_output_volume = output_volume.clamp(0.0, 1.0);
-    // Straight through to a running session as well as to disk: dragging the volume slider
-    // while people are talking should change what you hear, not what you hear next time.
-    session.send(voice::engine::Command::Volume(cfg.voice_output_volume));
-    config::save(&app, &cfg).map_err(|e| format!("{e:#}"))
-}
-
-/// Hear riders from where they are on the track, or flat.
-///
-/// Takes effect on the next session rather than mid-race: the engine reads it when it joins,
-/// and a rider is far more likely to be flipping this while parked in the menus than while
-/// racing. The setting is what persists; the switch is not a live mixer control.
-#[tauri::command]
-fn set_voice_proximity(app: tauri::AppHandle, proximity: bool) -> Result<(), String> {
-    let mut cfg = config::load(&app).unwrap_or_default();
-    cfg.voice_proximity = proximity;
-    config::save(&app, &cfg).map_err(|e| format!("{e:#}"))
-}
-
-/// Who is in voice on this server right now, and who is talking.
-///
-/// The panel also gets this pushed as a `voice-status` event; this is for the first paint,
-/// before anything has changed.
-#[tauri::command]
-fn voice_status(session: State<voice::session::Session>) -> voice::engine::Status {
-    session.status()
-}
-
-/// Silence one rider, for as long as this session lasts.
-#[tauri::command]
-fn voice_mute(session: State<voice::session::Session>, peer_id: String, muted: bool) {
-    session.send(voice::engine::Command::Mute { peer_id, muted });
-}
-
-/// Open the mic and start reporting its level as `voice-input-level`.
-///
-/// Returns a warning string when the saved device is gone and we fell back to the default
-/// — the unplugged-headset case, which must be visible rather than silently mute.
-#[tauri::command]
-fn voice_meter_start(
-    app: tauri::AppHandle,
-    monitor: State<voice::Monitor>,
-) -> Result<Option<String>, String> {
-    let cfg = config::load(&app).unwrap_or_default();
-    monitor.start(app.clone(), &cfg.voice_input_device, cfg.voice_input_gain)
-}
-
-/// Close the mic. Idempotent — the settings page calls it on unmount.
-#[tauri::command]
-fn voice_meter_stop(monitor: State<voice::Monitor>) {
-    monitor.stop();
-}
-
-/// Play a short tone on the configured output, so the player can confirm which headset
-/// voice will come out of before they're on a grid with twenty people.
-#[tauri::command]
-fn voice_test_output(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let cfg = config::load(&app).unwrap_or_default();
-    voice::test_output(&cfg.voice_output_device, cfg.voice_output_volume)
 }
 
 /// Rebind the overlay hotkey. Validates and registers before saving, so a combo that
@@ -8697,8 +8552,6 @@ fn main() {
         .manage(SourceWatcher::default())
         .manage(shop_session::ShopSession::default())
         .manage(hub_session::HubSession::default())
-        .manage(voice::Monitor::default())
-        .manage(voice::session::Session::default())
         .setup(|app| {
             log::info!("MXB App {} starting", env!("CARGO_PKG_VERSION"));
             // Before anything can seal or unseal a key, which loads `mxbsecure.dll` into this
@@ -9009,9 +8862,6 @@ fn main() {
             watch_lease(handle);
             #[cfg(mxbsecure)]
             register_secure_key_check();
-            // Voice follows the rider onto whatever server they join, and off it again.
-            // There is nothing to press: the supervisor is the whole of "joining a room".
-            voice::session::start(handle);
             // Tells accepted friends which server the rider is on, unless they switched it off.
             friends::start(handle);
             shop_session::load_session(handle);
@@ -9297,25 +9147,12 @@ fn main() {
             set_overlay_hotkey,
             overlay::overlay_handoff,
             overlay::overlay_peer,
-            voice_devices,
-            voice_status,
-            voice_mute,
-            set_voice_proximity,
-            set_voice_enabled,
             set_paint_sync_enabled,
             paint_sync_readiness,
             remove_synced_paints,
             paint_policies,
             set_paint_policy,
             set_preview_tyres,
-            set_voice_input_device,
-            set_voice_output_device,
-            set_voice_ptt_hotkey,
-            set_voice_levels,
-            set_voice_toggle_to_talk,
-            voice_meter_start,
-            voice_meter_stop,
-            voice_test_output,
             set_watch_mods_reload,
             set_beta_updates,
             set_auto_updates,
@@ -10794,6 +10631,7 @@ fn experimental_state(app: tauri::AppHandle) -> serde_json::Value {
 
 // Tokens stay in Rust; the general UI has no reason to read them.
 fn public_config(mut cfg: AppConfig) -> AppConfig {
+    cfg.voice_enabled = false;
     cfg.cp_token.clear();
     for server in &mut cfg.servers { server.token.clear(); }
     cfg
@@ -11324,6 +11162,20 @@ mod local_security_tests {
         }
         assert!(ipc_allowed(MAIN_WINDOW, "get_config"));
         assert!(!ipc_allowed(MAIN_WINDOW, "plugin_install_payload"));
+    }
+
+    #[test]
+    fn voice_commands_are_unavailable_even_to_the_main_window() {
+        for command in ["voice_devices", "voice_meter_start", "voice_test_output", "set_voice_enabled"] {
+            for window in [MAIN_WINDOW, "overlay", SHOP_LOGIN_WINDOW] {
+                assert!(!ipc_allowed(window, command));
+            }
+        }
+        let mut cfg = AppConfig::default();
+        cfg.voice_enabled = true;
+        assert!(!public_config(cfg.clone()).voice_enabled);
+        config::migrate(&mut cfg);
+        assert!(!cfg.voice_enabled, "upgraded configs must also keep voice disabled");
     }
 
     #[test]
