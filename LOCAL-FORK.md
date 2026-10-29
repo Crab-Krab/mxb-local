@@ -59,6 +59,13 @@ Your game may still load those existing DLLs. They have not been audited here.
 Optional cloud features still depend on the original service and may not work with
 this fork. The fork cannot promise compatibility with every upstream feature.
 
+## Download a published build
+
+Use the [local.2 release](https://github.com/Crab-Krab/mxb-local/releases/tag/v0.20.6-local.2)
+for the Windows installer, SHA-256 checksum and license. Release assets are separate
+from temporary Actions artifacts. This is the verified installer from the successful
+Windows build, not a newly rebuilt application.
+
 ## Easiest build: GitHub
 
 For another build, open **Actions → Build MXB Local for Windows → Run workflow**.
@@ -70,6 +77,11 @@ confuse an unsigned local build with the publisher-signed upstream installer.
 The workflow has read-only repository permissions, uses no account secrets, does
 not publish a release, and does not upload game files or personal settings. It
 uploads build artifacts and lockfiles to your repository's Actions run.
+
+A separate, explicitly scoped publishing workflow uses repository write permission
+to attach the verified build to a GitHub Release. It checks the successful source
+build, archive digest, installer digest and published asset digests. It does not
+build or execute the desktop app, or upload game files or personal settings.
 
 ## Local build for maintainers
 
@@ -86,3 +98,4 @@ The checked-in Cargo.lock and bun.lock are the versions from the verified build.
 No audit or patch can guarantee that a large application has no remaining security
 issues. A successful build and a smoke test with a disposable game profile are
 required before using this fork for your regular mod collection.
+
