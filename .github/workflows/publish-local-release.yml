@@ -93,7 +93,7 @@ jobs:
 
           ### Install or update
 
-          Download **MXB Local_0.20.6-local.2_x64-setup.exe** below, close MXB Local, then run the installer. Existing MXB Local settings are retained. GitHub's automatic Source code downloads contain the source, not the Windows installer.
+          Download **MXB.Local_0.20.6-local.2_x64-setup.exe** below, close MXB Local, then run the installer. Existing MXB Local settings are retained. GitHub's automatic Source code downloads contain the source, not the Windows installer.
 
           This is the same installer produced by the [successful Windows build and regression checks](https://github.com/Crab-Krab/mxb-local/actions/runs/40813594922), from commit `24fb7f6387639704068e5ea87d0c4eb228125dea`.
 
@@ -119,38 +119,77 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" > /dev/null 2>&1; then
-            echo 'This release already exists. Inspect it before making any changes.'
-            exit 1
-          fi
-          gh release create "$RELEASE_TAG" --repo "$GH_REPO" \
-            --target "$BUILD_SHA" --title 'MXB Local 0.20.6-local.2' \
-            --draft --prerelease --notes-file release-notes.md \
-            "release-assets/$INSTALLER" release-assets/SHA256SUMS.txt release-assets/LICENSE
-          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > staged-release.json
           python3 - <<'PY'
-          import json, os
+          import hashlib, http.client, json, os, subprocess
           from pathlib import Path
-          r = json.loads(Path('staged-release.json').read_text())
-          assert r['draft'] and r['tag_name'] == os.environ['RELEASE_TAG']
-          assert r['target_commitish'] == os.environ['BUILD_SHA']
-          assert {a['name'] for a in r['assets']} == {os.environ['INSTALLER'], 'SHA256SUMS.txt', 'LICENSE'}
-          PY
-          gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir verify-assets \
-            --pattern "$INSTALLER" --pattern SHA256SUMS.txt --pattern LICENSE
-          python3 - <<'PY'
-          from pathlib import Path
-          for source in Path('release-assets').iterdir():
-              assert (Path('verify-assets') / source.name).read_bytes() == source.read_bytes(), source.name
-          print('Every staged release asset matches the verified original.')
-          PY
-          gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false
-          gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > published-tag.json
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          tag = json.loads(Path('published-tag.json').read_text())
-          assert tag['object']['type'] == 'commit' and tag['object']['sha'] == os.environ['BUILD_SHA']
-          print('Published release tag points to the exact tested source commit.')
+          from urllib.parse import urlencode
+          repo, tag = os.environ['GH_REPO'], os.environ['RELEASE_TAG']
+          sha = os.environ['BUILD_SHA']
+          def api(path, payload=None, method=None):
+              args = ['gh', 'api', path]
+              if method:
+                  args += ['--method', method]
+              if payload is not None:
+                  args += ['--input', '-']
+              raw = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
+                                   capture_output=True, text=True, check=True).stdout
+              return json.loads(raw) if raw.strip() else None
+          def matching_release():
+              rows = [r for r in api(f'repos/{repo}/releases?per_page=100') if r['tag_name'] == tag]
+              assert len(rows) <= 1
+              return rows[0] if rows else None
+          release = matching_release()
+          if release is None:
+              subprocess.run(['gh', 'release', 'create', tag, '--repo', repo, '--target', sha,
+                              '--title', 'MXB Local 0.20.6-local.2', '--draft', '--prerelease',
+                              '--notes-file', 'release-notes.md',
+                              'release-assets/' + os.environ['INSTALLER'],
+                              'release-assets/SHA256SUMS.txt', 'release-assets/LICENSE'], check=True)
+              release = matching_release()
+          assert release is not None and release['target_commitish'] == sha
+          assert release['tag_name'] == tag
+          release_id = release['id']
+          asset_name = 'MXB.Local_0.20.6-local.2_x64-setup.exe'
+          checksum = (os.environ['INSTALLER_SHA256'] + '  ' + asset_name + '\n').encode()
+          (Path('release-assets') / 'SHA256SUMS.txt').write_bytes(checksum)
+          expected = {
+              asset_name: Path('release-assets', os.environ['INSTALLER']).read_bytes(),
+              'SHA256SUMS.txt': checksum,
+              'LICENSE': Path('release-assets/LICENSE').read_bytes(),
+          }
+          assets = {a['name']: a for a in release['assets']}
+          assert set(assets) == set(expected)
+          # GitHub normalizes spaces in uploaded asset names to dots. Repair only
+          # our initial draft's checksum text; the installer and license stay intact.
+          checksum_hash = 'sha256:' + hashlib.sha256(checksum).hexdigest()
+          if assets['SHA256SUMS.txt']['digest'] != checksum_hash:
+              assert release['draft'], 'Never replace assets on a published release'
+              assert assets['SHA256SUMS.txt']['digest'] == 'sha256:5af01ae5276ca9f556ab3ed346948c64f21ef65d2abfc93e6a3760bc272c2e43'
+              api(f"repos/{repo}/releases/assets/{assets['SHA256SUMS.txt']['id']}", method='DELETE')
+              connection = http.client.HTTPSConnection('uploads.github.com', timeout=60)
+              connection.request('POST', f'/repos/{repo}/releases/{release_id}/assets?' + urlencode({'name':'SHA256SUMS.txt'}),
+                                 body=checksum, headers={'Authorization':'Bearer ' + os.environ['GH_TOKEN'],
+                                                        'Content-Type':'text/plain', 'User-Agent':'MXB-Local-release-verifier'})
+              response = connection.getresponse()
+              data = response.read()
+              assert response.status == 201, f'Checksum upload failed: HTTP {response.status}'
+              assert json.loads(data)['digest'] == checksum_hash
+              connection.close()
+          release = api(f'repos/{repo}/releases/{release_id}')
+          assets = {a['name']: a for a in release['assets']}
+          assert set(assets) == set(expected)
+          for name, data in expected.items():
+              assert assets[name]['state'] == 'uploaded'
+              assert assets[name]['size'] == len(data)
+              assert assets[name]['digest'] == 'sha256:' + hashlib.sha256(data).hexdigest(), name
+          print('All staged asset sizes and SHA256 digests match the verified original files.')
+          if release['draft']:
+              release = api(f'repos/{repo}/releases/{release_id}', {
+                  'draft': False, 'tag_name': tag, 'target_commitish': sha,
+                  'body': Path('release-notes.md').read_text(), 'prerelease': True}, method='PATCH')
+          assert not release['draft'] and release['published_at']
+          published_tag = api(f'repos/{repo}/git/ref/tags/{tag}')
+          assert published_tag['object']['type'] == 'commit' and published_tag['object']['sha'] == sha
+          print('Published release verified:', release['html_url'])
           PY
 
