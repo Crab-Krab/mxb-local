@@ -100,7 +100,7 @@ export default function TopRail({ view, plugins, onNavigate, leftRef, rightRef }
   return (
     <>
     <AppBar
-      name={"MXB App"}
+      name={"MXB Local"}
       tabs={items.map((item) => ({ id: item.id, label: item.rawLabel ?? t(item.label) }))}
       active={active?.id}
       onPick={(id) => {

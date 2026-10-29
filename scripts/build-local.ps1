@@ -18,6 +18,8 @@ cargo test --locked -p mxb-core secret_store::tests --lib
 if ($LASTEXITCODE -ne 0) { throw 'Windows credential-storage tests failed.' }
 cargo test --locked -p mxb-app local_security_tests --bin mxb-app
 if ($LASTEXITCODE -ne 0) { throw 'Backend security regression tests failed.' }
+cargo test --locked -p mxb-app setup_readiness_tests --bin mxb-app
+if ($LASTEXITCODE -ne 0) { throw 'Setup readiness regression tests failed.' }
 $env:VITE_APP_NAME = 'MXB Local'
 Push-Location apps/manager
 try {
