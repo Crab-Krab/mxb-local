@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+import { mkdirSync, writeFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
@@ -11,9 +12,34 @@ const host = process.env.TAURI_DEV_HOST;
 // the same number, so it travels with a matching `--config '{"build":{"devUrl":…}}'`.
 const port = Number(process.env.MXB_DEV_PORT) || 1420;
 
+// Build-time evidence: Rollup reports which exports survive into production chunks.
+// Kept outside dist so the installed app carries no dependency-review metadata.
+function dependencyInventory(): Plugin {
+  return {
+    name: "mxb-local-dependency-inventory",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const modules = Object.values(bundle).flatMap((chunk) =>
+        chunk.type === "chunk" ? Object.entries(chunk.modules).map(([id, info]) => ({
+          id: path.relative(__dirname, id).replace(/\\/g, "/"),
+          renderedLength: info.renderedLength,
+          renderedExports: info.renderedExports,
+          removedExports: info.removedExports,
+        })) : [],
+      );
+      const output = path.resolve(__dirname, "../../.security-results");
+      mkdirSync(output, { recursive: true });
+      writeFileSync(path.join(output, "frontend-runtime-modules.json"), JSON.stringify(modules, null, 2));
+      for (const module of modules.filter((m) => /[\/](fflate|zod|source-map-js|nanoid)[\/]/.test(m.id))) {
+        console.log("Runtime dependency review: " + JSON.stringify(module));
+      }
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), ...(process.env.MXB_DEPENDENCY_REVIEW ? [dependencyInventory()] : [])],
 
   resolve: {
     alias: {
