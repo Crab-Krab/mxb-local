@@ -52,6 +52,9 @@ wording correction explains this case without claiming the category is empty.**
   links and oversized pages are rejected. Category metadata and pagination are
   checked, and cached results avoid repeated ranking requests while paging.
 
+See [the local.3 dependency review](SECURITY-REVIEW-local.3.md) for the raw-scan
+interpretation, affected-API analysis and remaining maintenance concerns.
+
 ## Features and limits
 
 Basic browsing, downloading, archive installation, library management, and existing
@@ -71,7 +74,7 @@ this fork. The fork cannot promise compatibility with every upstream feature.
 
 ## Download a published build
 
-Use the [local.2 release](https://github.com/Crab-Krab/mxb-local/releases/tag/v0.20.6-local.2)
+Use the [local.3 release](https://github.com/Crab-Krab/mxb-local/releases/tag/v0.20.6-local.3)
 for the Windows installer, SHA-256 checksum and license. Release assets are separate
 from temporary Actions artifacts. This is the verified installer from the successful
 Windows build, not a newly rebuilt application.
@@ -101,8 +104,9 @@ Then run `scripts/build-local.ps1` from a Visual Studio developer PowerShell.
 
 The build script verifies the checked-in TLS versions, refreshes only the selected
 TLS packages if those checks fail, builds the frontend,
-runs the Windows credential-storage and backend security regressions, then creates
-an NSIS installer. The GitHub workflow additionally runs browser rendering tests.
+runs the Windows credential-storage, setup-readiness, backend security and archive
+regressions, then creates an NSIS installer. The GitHub workflow first runs browser
+description and setup tests, and records dependency-review evidence.
 The checked-in Cargo.lock and bun.lock are the versions from the verified build.
 
 No audit or patch can guarantee that a large application has no remaining security
