@@ -7,10 +7,11 @@ based on v0.20.6. The upstream MIT license and attribution are retained.
 checks. Local testing confirmed the OEM bike library, track descriptions and
 popularity browsing.**
 
-[Download the local.2 Windows build](https://github.com/Crab-Krab/mxb-local/actions/runs/40813594922/artifacts/12873995398)
-and extract the ZIP. Close MXB Local, then run
-`MXB Local_0.20.6-local.2_x64-setup.exe` to install or update it.
-This Actions download is retained through November 28, 2026; keep a local copy.
+[Download the Windows installer](https://github.com/Crab-Krab/mxb-local/releases/download/v0.20.6-local.2/MXB.Local_0.20.6-local.2_x64-setup.exe)
+from the [local.2 release](https://github.com/Crab-Krab/mxb-local/releases/tag/v0.20.6-local.2).
+Close MXB Local, then run `MXB.Local_0.20.6-local.2_x64-setup.exe` to install or
+update it. The release includes a checksum file and license. These release assets
+are separate from temporary GitHub Actions artifacts and their 30-day retention.
 
 [Successful build and test results](https://github.com/Crab-Krab/mxb-local/actions/runs/40813594922).
 The exact Cargo and Bun lockfiles from the successful build are committed here.
@@ -35,3 +36,4 @@ Do not use the original publisher's release downloads as a substitute for this f
 
 [Original project documentation](README.upstream.md) describes the original app;
 its download links and security claims do not describe this fork.
+
