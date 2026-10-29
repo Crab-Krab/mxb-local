@@ -3,8 +3,15 @@
 An independent personal fork of [Frostn1/mxb-app](https://github.com/Frostn1/mxb-app),
 based on v0.20.6. The upstream MIT license and attribution are retained.
 
-**Status: security changes prepared; Windows compilation and runtime validation
-are in progress. No tested installer is available yet.**
+**Status: Windows installer built successfully. All 17 targeted security tests passed.
+Testing the actual app with your MX Bikes installation is the next step.**
+
+[Download the verified Windows build](https://github.com/Crab-Krab/mxb-local/actions/runs/40806541996/artifacts/12869723534)
+and extract the ZIP. Run `MXB Local_0.20.6-local.1_x64-setup.exe` to install it.
+This Actions download is retained through November 28, 2026; keep a local copy.
+
+[Successful build and test results](https://github.com/Crab-Krab/mxb-local/actions/runs/40806541996).
+The exact Cargo and Bun lockfiles from that build are committed in this fork.
 
 This fork rebuilds remote descriptions from a safe allowlist, adds a Content
 Security Policy, requires patched TLS packages, protects saved credentials with

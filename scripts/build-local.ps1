@@ -8,7 +8,7 @@ foreach ($tool in @('cargo', 'bun', 'python')) {
 }
 python scripts/prepare-local-dependencies.py
 if ($LASTEXITCODE -ne 0) { throw 'Dependency preparation failed.' }
-bun install
+bun install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed.' }
 bun run --cwd apps/manager build
 if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
