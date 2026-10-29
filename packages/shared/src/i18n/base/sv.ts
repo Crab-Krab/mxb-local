@@ -107,6 +107,7 @@ export const sv: Record<keyof typeof en, string> = {
   "browseCat.bootPaints": "Stövelfärger",
   "browseCat.protection": "Skydd",
   "browseCat.protectionPaints": "Skyddsfärger",
+  "browse.popularEmpty": "Inga objekt från denna kategori finns bland webbplatsens 100 mest populära. Välj Nyaste eller Äldsta för att visa hela kategorin.",
   "browse.popularLimited": "Popularitet använder webbplatsens 100 mest populära totalt. Kategorifilter begränsar listan.",
   "browseSort.newest": "Nyaste",
   "browseSort.oldest": "Äldsta",

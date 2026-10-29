@@ -210,7 +210,9 @@ export default function Browse({
           </div>
         ) : mods.length === 0 ? (
           <p className="py-20 text-center text-[13px] text-muted-foreground">
-            {t("browse.empty", { type: t(modType.labelInline) })}
+            {listing.popularLimited
+              ? t("browse.popularEmpty")
+              : t("browse.empty", { type: t(modType.labelInline) })}
           </p>
         ) : (
           <>

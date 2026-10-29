@@ -3,10 +3,11 @@
 This is an independent Windows build of Frostn1/mxb-app v0.20.6. It keeps the
 upstream MIT license and attribution. It is not an official Frost/mxbsecure release.
 
-**Build status: local.1 built and passed 17 targeted security tests. Local testing
-confirmed OEM bikes in Library and track descriptions, after repairing a first-run
-completion bug. local.2 includes that setup fix and a popularity-list compatibility
-fix; its new Windows build and regression checks must pass before installation.**
+**Build status: local.2 built successfully and passed its Windows build and
+security checks. Local testing confirmed OEM bikes in Library, track descriptions
+and popularity browsing. ReShade has no entries in the tested top-100 overall
+ranking; Newest and Oldest still show that full category. A later source-only
+wording correction explains this case without claiming the category is empty.**
 
 ## What changes
 
