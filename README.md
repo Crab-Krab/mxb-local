@@ -4,8 +4,7 @@ An independent personal fork of [Frostn1/mxb-app](https://github.com/Frostn1/mxb
 based on v0.20.6. The upstream MIT license and attribution are retained.
 
 **Status: local.2 built successfully and passed its Windows build and security
-checks. Local testing confirmed the OEM bike library, track descriptions and
-popularity browsing.**
+checks.
 
 [Download the Windows installer](https://github.com/Crab-Krab/mxb-local/releases/download/v0.20.6-local.2/MXB.Local_0.20.6-local.2_x64-setup.exe)
 from the [local.2 release](https://github.com/Crab-Krab/mxb-local/releases/tag/v0.20.6-local.2).
