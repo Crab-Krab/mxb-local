@@ -197,49 +197,7 @@ pub struct Event {
 /// Called once from `setup`. Mints the install id on first run and saves it — a fresh id
 /// every launch would turn one player into a crowd.
 pub fn start(app: &AppHandle, which: &'static str) {
-    *APP_ID.lock().unwrap() = which;
-    let mut cfg = config::load(app).unwrap_or_default();
-    if !allowed(&cfg) {
-        log::info!("[usage] anonymous stats are off for this run");
-        return;
-    }
-    if cfg.install_id.trim().is_empty() {
-        cfg.install_id = mint_install_id();
-        if cfg.install_id.is_empty() {
-            // A build without `mint-install-id` — the studio. The id names the machine and
-            // the manager is what creates it, so a studio-only install reports nothing
-            // rather than inventing a second identity for the same computer.
-            log::info!("[usage] no install id on this machine — not counting this run");
-            return;
-        }
-        if let Err(e) = config::save(app, &cfg) {
-            // Without a saved id every launch would look like a new install, which is worse
-            // than no numbers at all — so don't count this run.
-            log::warn!("[usage] couldn't save an install id ({e:#}) — not counting this run");
-            return;
-        }
-    }
-
-    ENABLED.store(true, Ordering::Relaxed);
-    {
-        let mut buffer = BUFFER.lock().unwrap();
-        buffer.sessions += 1;
-        buffer.open_since = Some(Instant::now());
-    }
-    track("app.start");
-    if cfg.seen_version.trim() != app.package_info().version.to_string() && !cfg.seen_version.trim().is_empty() {
-        track("app.update");
-    }
-
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let mut delay = FIRST_FLUSH;
-        loop {
-            tokio::time::sleep(delay).await;
-            flush(&handle).await;
-            delay = FLUSH_EVERY;
-        }
-    });
+    let _ = (app, which); // Reporting is disabled in this fork.
 }
 
 /// Whether this run may report at all.
@@ -387,27 +345,9 @@ pub fn track(name: &str) {
 /// the machine, and a buffer that survived it would send one last report after the player
 /// said not to.
 pub fn set_enabled(app: &AppHandle, on: bool, cfg: &AppConfig) {
-    if on && allowed(cfg) {
-        ENABLED.store(true, Ordering::Relaxed);
-        let mut buffer = BUFFER.lock().unwrap();
-        if buffer.open_since.is_none() {
-            buffer.open_since = Some(Instant::now());
-            buffer.sessions += 1;
-        }
-        drop(buffer);
-        log::info!("[usage] anonymous stats on");
-        // A config that has never had an id gets one now rather than at the next launch.
-        if cfg.install_id.trim().is_empty() {
-            let mut fresh = cfg.clone();
-            fresh.install_id = mint_install_id();
-            let _ = config::save(app, &fresh);
-        }
-        return;
-    }
+    let _ = (app, on, cfg);
     ENABLED.store(false, Ordering::Relaxed);
-    let mut buffer = BUFFER.lock().unwrap();
-    *buffer = Buffer::new();
-    log::info!("[usage] anonymous stats off");
+    if let Ok(mut buffer) = BUFFER.lock() { *buffer = Buffer::new(); }
 }
 
 /// Send what has been counted, and keep it if the send fails.

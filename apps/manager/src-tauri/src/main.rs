@@ -3,6 +3,7 @@
 
 pub(crate) use mxb_core::bikefiles;
 mod archive_guard;
+mod local_security;
 mod bikeswap;
 mod bundle;
 mod cancel;
@@ -204,10 +205,12 @@ fn parks_on_close(painted: bool, run_in_background: bool) -> bool {
 /// So both get an allowlist of exactly one call: emitting their result event. Every other
 /// window is unaffected and keeps whatever its own capability file grants.
 fn ipc_allowed(label: &str, command: &str) -> bool {
-    if label != mxb_fetch::WINDOW && label != shop_fetch::WINDOW {
-        return true;
+    match label {
+        MAIN_WINDOW | "overlay" => !matches!(command,
+            "plugin_install" | "plugin_install_payload"),
+        mxb_fetch::WINDOW | shop_fetch::WINDOW => command == "plugin:event|emit",
+        _ => false,
     }
-    command == "plugin:event|emit"
 }
 
 /// Whether first-run setup is actually complete.
@@ -282,6 +285,8 @@ fn create_config(
     // that's already there — rewriting it would replay the intro and the tour.
     match config::load(&app) {
         Ok(prev) => {
+            cfg.cp_token = prev.cp_token.clone();
+            cfg.servers = prev.servers.clone();
             cfg.setup_complete |= prev.setup_complete;
             cfg.welcome_seen |= prev.welcome_seen;
             cfg.tour_done |= prev.tour_done;
@@ -1615,7 +1620,7 @@ async fn set_active_game(
 ) -> Result<AppConfig, String> {
     let mut cfg = config::load(&app).unwrap_or_default();
     if !cfg.switch_game(game) {
-        return Ok(cfg);
+        return Ok(public_config(cfg));
     }
     let cfg = config::finalize(cfg);
     config::save(&app, &cfg).map_err(|e| format!("{e:#}"))?;
@@ -1628,7 +1633,7 @@ async fn set_active_game(
     // FrostMod lives in the active game's own folder:
     // put it there now, so a launch from Steam before the next status poll still has it.
     frostmod_manage::sync_if_shut(&app);
-    Ok(cfg)
+    Ok(public_config(cfg))
 }
 
 /// Point the app at a different mods folder; an empty string re-runs detection.
@@ -3327,7 +3332,7 @@ fn plain_address(value: &str) -> bool {
 /// link is reachable by any page the player visits, so this is untrusted input and treated
 /// as such.
 fn parse_deep_link(url: &str) -> Option<DeepLink> {
-    let rest = url.strip_prefix("mxb://")?;
+    let rest = url.strip_prefix("mxblocal://").or_else(|| url.strip_prefix("mxb://"))?;
     // `mxb://enroll?code=X` — the host is the route. A trailing slash is what some launchers
     // add, so it's tolerated rather than made to fail.
     let (route, query) = rest.split_once('?')?;
@@ -8577,7 +8582,7 @@ fn main() {
     // pays for (stripped symbols, fat LTO, no debug info), so this is the runtime half of
     // it. No-op in debug builds, so `tauri dev` and the tests stay debuggable. See
     // `antidebug`.
-    antidebug::guard();
+            // Disabled in the independent local fork.
 
     // A copy of this binary, asked for a Steam app ticket and nothing else. It prints the
     // ticket and exits, and the app proper never touches Steam's API itself.
@@ -8675,7 +8680,7 @@ fn main() {
         // born when the upload lands — so the web clipboard's focus and gesture rules
         // rule it out. This writes from the process instead.
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // This fork has no upstream binary updater.
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -8705,13 +8710,13 @@ fn main() {
             // network. `enforce_marker` shows the message and ends the process. A clean install
             // has no marker and sails past. See `gate.rs` for why the reason it gives is not the
             // real one.
-            gate::enforce_marker(app.handle());
+            // Disabled in the independent local fork.
             // And ask the server afresh, off the startup path: this is what blocks a newly-banned
             // install on its first run, and what lets a lifted ban back in by clearing the marker.
-            tauri::async_runtime::spawn(gate::check(app.handle().clone()));
+            // Disabled in the independent local fork.
             // And again every half hour while it runs, so a ban reaches an app left open all
             // evening rather than on its next launch.
-            gate::watch(app.handle());
+            // Disabled in the independent local fork.
 
             // The main window is `"create": false` in tauri.conf.json so it is built here
             // rather than by Tauri's own startup loop, which is the only way to decide the
@@ -9017,16 +9022,16 @@ fn main() {
             memwatch::start();
             // Anonymous counters. Started last of the startup tasks and after the config
             // work above, because the install id it mints is saved into that same config.
-            usage::start(handle, usage::MANAGER);
+            // Disabled in the independent local fork.
             // The survey prompt. Started beside the counters and gated on the same consent:
             // it answers the question counters cannot, which is whether any of this is any
             // good. Nothing is fetched or asked when either switch is off.
-            mxb_core::survey::start(handle, usage::MANAGER);
+            // Disabled in the independent local fork.
             // Whether the account has the supporter pack, cached for offline use.
-            mxb_core::supporter::start(handle);
+            // Disabled in the independent local fork.
             // The support card's launch count. Counted whatever the build; whether it is ever shown
             // is decided in `support::due`.
-            mxb_core::support::start(handle, usage::MANAGER);
+            // Disabled in the independent local fork.
             // Warm an empty address book from the shared one, once, before anybody needs it.
             // The Servers tab already rebuilds its whole list with `GETINFO` when the master
             // won't answer — but only from addresses this install has been told about, so on a
@@ -10787,9 +10792,16 @@ fn experimental_state(app: tauri::AppHandle) -> serde_json::Value {
     })
 }
 
+// Tokens stay in Rust; the general UI has no reason to read them.
+fn public_config(mut cfg: AppConfig) -> AppConfig {
+    cfg.cp_token.clear();
+    for server in &mut cfg.servers { server.token.clear(); }
+    cfg
+}
+
 #[tauri::command]
 fn get_config(app: tauri::AppHandle) -> AppConfig {
-    config::load(&app).unwrap_or_default()
+    public_config(config::load(&app).unwrap_or_default())
 }
 
 /// The titles this build can drive, with their per-game capabilities. Static data —
@@ -11297,5 +11309,56 @@ mod paint_sync_badge_tests {
         let counts = counts(&[("somewhere else", 3)]);
         let got = match_presence(&counts, &[], &[row("Quiet Server", "9.9.9.9:54210")]);
         assert!(got.is_empty(), "{got:?}");
+    }
+}
+
+#[cfg(test)]
+mod local_security_tests {
+    use super::*;
+
+    #[test]
+    fn remote_login_and_unknown_windows_have_no_native_commands() {
+        for window in [SHOP_LOGIN_WINDOW, HUB_LOGIN_WINDOW, "unexpected-window"] {
+            assert!(!ipc_allowed(window, "get_config"));
+            assert!(!ipc_allowed(window, "create_config"));
+        }
+        assert!(ipc_allowed(MAIN_WINDOW, "get_config"));
+        assert!(!ipc_allowed(MAIN_WINDOW, "plugin_install_payload"));
+    }
+
+    #[test]
+    fn settings_responses_do_not_expose_tokens() {
+        let mut cfg = AppConfig::default();
+        cfg.cp_token = "private-account-token".into();
+        cfg.servers.push(config::ServerRef { token: "private-server-token".into(), ..Default::default() });
+        let public = serde_json::to_string(&public_config(cfg)).unwrap();
+        assert!(!public.contains("private-account-token"));
+        assert!(!public.contains("private-server-token"));
+    }
+
+    #[test]
+    fn descriptions_reject_active_content_and_keep_formatting() {
+        use mods::shop_catalog::sanitize_html;
+        let payloads = [
+            "<svg onload=alert(1)></svg>",
+            "<iframe\u{000c}srcdoc=\"&lt;script&gt;alert(1)&lt;/script&gt;\"></iframe>",
+            "<p onclick=alert(1)>hello</p>",
+            "<a href=\"java&#10;script:alert(1)\">click</a>",
+            "<img src=x onerror=alert(1)>",
+            "<math><mtext><img src=x onerror=alert(1)></mtext></math>",
+        ];
+        for payload in payloads {
+            let clean = sanitize_html(payload).unwrap_or_default();
+            assert!(!clean.contains("onload"));
+            assert!(!clean.contains("onclick"));
+            assert!(!clean.contains("onerror"));
+            assert!(!clean.contains("srcdoc"));
+            assert!(!clean.contains("<iframe"));
+            assert!(!clean.contains("<script"));
+            assert!(!clean.contains("alert("));
+        }
+        let clean = sanitize_html("<p>Hello <strong>rider</strong></p>").unwrap();
+        assert_eq!(clean, "<p>Hello <strong>rider</strong></p>");
+        assert!(sanitize_html(&"x".repeat(512 * 1024 + 1)).is_none());
     }
 }

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { sanitizeDescriptionHtml } from "@/lib/descriptionHtml.mjs";
 import { open } from "@tauri-apps/plugin-shell";
 import {
   cachedImage,
@@ -41,7 +42,7 @@ interface RichDescriptionProps {
  * its own, and must not be handed markup that skipped it.
  */
 export default function RichDescription({ html }: RichDescriptionProps) {
-  const withCachedImages = useMemo(() => proxyImages(html), [html]);
+  const withCachedImages = useMemo(() => proxyImages(sanitizeDescriptionHtml(html)), [html]);
 
   return (
     <div

@@ -26,9 +26,6 @@ import { useI18n } from "@/i18n";
 import { APP_NAME, setAmbientVars } from "@/i18n";
 import { UpdateProvider } from "./Context/Update";
 import RuntimeBanner from "./Components/RuntimeBanner/RuntimeBanner";
-import SigninGate from "@frost/shared/Components/SigninGate/SigninGate";
-import SurveyPrompt from "@frost/shared/Components/Survey/SurveyPrompt";
-import SupportPrompt from "@frost/shared/Components/Support/SupportPrompt";
 import UpdateBanner from "./Components/UpdateBanner/UpdateBanner";
 import type { Config, GameId, GameInfo } from "@frost/shared/types";
 import { invoke } from "@tauri-apps/api/core";
@@ -242,15 +239,12 @@ const App = () => {
             {/* The Steam sign-in wall, mounted unconditionally so it can cover setup, the
                 dashboard and the pre-config state alike. It shows itself only when the gate
                 says a sign-in is required. */}
-            <SigninGate />
             {/* Offer to register loose model-swap folders once the app is set up and the
                 intro tour is out of the way. */}
             {ready && config && <LooseSwapPrompt />}
             {/* The survey prompt. Shows itself rarely and on its own schedule — the decision
                 is in `crates/core/src/survey.rs`, not here. Mounted last so it sits over the
                 shell and under the sign-in wall. */}
-            <SurveyPrompt />
-            <SupportPrompt />
           </UpdateProvider>
         </TooltipProvider>
       </FrostmodProvider>

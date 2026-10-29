@@ -69,9 +69,9 @@ pub fn write(app: &AppHandle, site: &Site, cookies: &Cookies) -> anyhow::Result<
     }
     std::fs::write(
         &path,
-        serde_json::to_string_pretty(&Stored {
+        mxb_core::secret_store::seal(&serde_json::to_vec(&Stored {
             cookies: cookies.clone(),
-        })?,
+        })?)?,
     )?;
     Ok(())
 }
@@ -79,7 +79,8 @@ pub fn write(app: &AppHandle, site: &Site, cookies: &Cookies) -> anyhow::Result<
 /// `None` when there is nothing usable on disk — missing, unreadable, or empty.
 pub fn read(app: &AppHandle, site: &Site) -> Option<Cookies> {
     let text = std::fs::read_to_string(path(app, site).ok()?).ok()?;
-    let stored: Stored = serde_json::from_str(&text).ok()?;
+    let plain = mxb_core::secret_store::open(&text).ok()?;
+    let stored: Stored = serde_json::from_slice(&plain).ok()?;
     (!stored.cookies.is_empty()).then_some(stored.cookies)
 }
 

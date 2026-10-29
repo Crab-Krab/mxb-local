@@ -561,104 +561,36 @@ pub(crate) fn safe_image_url(raw: &str) -> Option<String> {
 /// path that blocks the first paint, to produce markup that all but a handful of items would
 /// never show. One parse on open costs nothing and is invisible next to the click.
 pub(crate) fn sanitize_html(raw: &str) -> Option<String> {
-    use scraper::{Html, Selector};
-
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    // Drop whole dangerous elements, contents and all.
-    let mut html = trimmed.to_string();
-    for tag in ["script", "iframe", "object", "embed", "style", "form", "link"] {
-        html = strip_element(&html, tag);
-    }
-
-    // Then anything that can execute from an attribute.
-    let doc = Html::parse_fragment(&html);
-    let has_script_attr = Selector::parse("*")
-        .ok()
-        .map(|sel| {
-            doc.select(&sel).any(|el| {
-                el.value().attrs().any(|(name, value)| {
-                    let name = name.to_ascii_lowercase();
-                    name.starts_with("on")
-                        || (matches!(name.as_str(), "href" | "src" | "srcset" | "action")
-                            && value.trim_start().to_ascii_lowercase().starts_with("javascript:"))
-                })
-            })
-        })
-        .unwrap_or(false);
-
-    // `scraper` can read a document but not rewrite one, so rather than half-clean the
-    // markup we drop attributes wholesale when any of them is executable. A description
-    // with an inline handler is not one worth rendering richly.
-    if has_script_attr {
-        html = strip_attributes(&html);
-    }
-
-    let cleaned = html.trim().to_string();
-    (!cleaned.is_empty()).then_some(cleaned)
-}
-
-/// Remove `<tag …>…</tag>` and any self-closing or unterminated form of it.
-fn strip_element(html: &str, tag: &str) -> String {
-    let lower = html.to_ascii_lowercase();
-    let open = format!("<{tag}");
-    let close = format!("</{tag}>");
-    let mut out = String::with_capacity(html.len());
-    let mut cursor = 0usize;
-    while let Some(rel) = lower[cursor..].find(&open) {
-        let start = cursor + rel;
-        // `<scriptish>` is not `<script>`; require a delimiter after the name.
-        let after = lower[start + open.len()..].chars().next();
-        if !matches!(after, None | Some(' ') | Some('>') | Some('/') | Some('\n') | Some('\t') | Some('\r')) {
-            out.push_str(&html[cursor..start + open.len()]);
-            cursor = start + open.len();
-            continue;
-        }
-        out.push_str(&html[cursor..start]);
-        cursor = match lower[start..].find(&close) {
-            Some(rel_end) => start + rel_end + close.len(),
-            // Unterminated: skip to the end of the opening tag and keep the rest of the text.
-            None => match lower[start..].find('>') {
-                Some(rel_gt) => start + rel_gt + 1,
-                None => html.len(),
-            },
-        };
-    }
-    out.push_str(&html[cursor.min(html.len())..]);
-    out
-}
-
-/// Reduce every tag to its bare name, dropping all attributes.
-fn strip_attributes(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut rest = html;
-    while let Some(lt) = rest.find('<') {
-        out.push_str(&rest[..lt]);
-        let Some(gt) = rest[lt..].find('>') else {
-            break;
-        };
-        let inner = &rest[lt + 1..lt + gt];
-        let closing = inner.starts_with('/');
-        let name: String = inner
-            .trim_start_matches('/')
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric())
-            .collect();
-        if !name.is_empty() {
-            out.push('<');
-            if closing {
-                out.push('/');
+    use scraper::{ElementRef, Html};
+    fn write(el: ElementRef<'_>, out: &mut String, depth: usize) {
+        if depth > 64 { return; }
+        let tag = el.value().name();
+        if matches!(tag, "script"|"style"|"iframe"|"frame"|"frameset"|"object"|"embed"|"svg"|"math"|"template"|"noscript"|"form"|"input"|"button"|"textarea"|"select"|"option"|"meta"|"base"|"link"|"title"|"xmp"|"plaintext") { return; }
+        let allowed = matches!(tag, "p"|"br"|"strong"|"b"|"em"|"i"|"u"|"s"|"ul"|"ol"|"li"|"blockquote"|"pre"|"code"|"h1"|"h2"|"h3"|"h4"|"h5"|"h6"|"table"|"thead"|"tbody"|"tfoot"|"tr"|"td"|"th"|"hr"|"a"|"img"|"span"|"div");
+        if allowed {
+            out.push('<'); out.push_str(tag);
+            let attr = if tag == "a" { Some("href") } else if tag == "img" { Some("src") } else { None };
+            if let Some(attr) = attr {
+                if let Some(url) = el.value().attr(attr).and_then(|v| reqwest::Url::parse(v).ok())
+                    .filter(|u| u.scheme() == "https" && u.username().is_empty() && u.password().is_none()) {
+                    out.push(' '); out.push_str(attr); out.push_str("=\"");
+                    out.push_str(&html_escape::encode_double_quoted_attribute(url.as_str())); out.push('"');
+                }
             }
-            out.push_str(&name);
             out.push('>');
         }
-        rest = &rest[lt + gt + 1..];
+        for child in el.children() {
+            if let Some(child) = ElementRef::wrap(child) { write(child, out, depth + 1); }
+            else if let scraper::Node::Text(text) = child.value() { out.push_str(&html_escape::encode_text(&text.text)); }
+        }
+        if allowed && !matches!(tag, "img"|"br"|"hr") { out.push_str("</"); out.push_str(tag); out.push('>'); }
     }
-    out.push_str(rest);
-    out
+    if raw.trim().is_empty() || raw.len() > 512 * 1024 { return None; }
+    let doc = Html::parse_fragment(raw);
+    let mut out = String::new();
+    write(doc.root_element(), &mut out, 0);
+    (!out.trim().is_empty()).then_some(out)
+
 }
 
 // ───────────────────────────────── mapping ─────────────────────────────────

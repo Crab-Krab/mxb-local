@@ -14,6 +14,13 @@ links = "mxbcore"
 [build-dependencies]
 
 [dependencies]
+# Security floors for CVE-2026-111943 and current TLS-handshake fixes.
+rustls = { version = ">=0.23.46, <0.24", default-features = false }
+rustls-webpki = ">=0.103.16, <0.104"
+webpki-roots = ">=1.0.10, <2"
+webpki-root-certs = ">=1.0.10, <2"
+h2 = ">=0.4.16, <0.5"
+
 mxb-content = { path = "../content" }
 anyhow = "1"
 flate2 = "1"

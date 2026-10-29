@@ -505,14 +505,14 @@ impl Default for AppConfig {
             profiles_path: String::new(),
             reshade_path: String::new(),
             wine_runner: String::new(),
-            run_in_background: true,
+            run_in_background: false,
             launch_at_startup: false,
             // Zero, not the current rev: a config without the field predates the rename and
             // its login item still names the old binary.
             autostart_binding_rev: 0,
             // The current rev, so a config created now is not immediately "migrated".
             launch_at_startup_rev: LAUNCH_AT_STARTUP_REV,
-            auto_run_frostmod: true,
+            auto_run_frostmod: false,
             queue_restart_game: false,
             friends_presence: true,
             frostmod_args: String::new(),
@@ -520,7 +520,7 @@ impl Default for AppConfig {
             watch_mods_reload: true,
             race_mode: false,
             beta_updates: false,
-            auto_updates: true,
+            auto_updates: false,
             secure_content_inject: false,
             setup_complete: false,
             welcome_seen: false,
@@ -551,9 +551,9 @@ impl Default for AppConfig {
             cp_rider_name: String::new(),
             cp_guid: String::new(),
             sync: SyncState::default(),
-            analytics_enabled: true,
+            analytics_enabled: false,
             install_id: String::new(),
-            survey_enabled: true,
+            survey_enabled: false,
             survey: SurveyState::default(),
             support: BTreeMap::new(),
             supporter: SupporterCache::default(),
@@ -816,7 +816,7 @@ pub fn default_user_dir(game: &GameProfile) -> Option<PathBuf> {
 /// `$XDG_DATA_HOME/<id>` — and `dirs_next` uses the same bases Tauri does.
 ///
 /// Frozen, like the identifier it names: every install already has this folder.
-pub const DATA_ID: &str = "com.frost.mxbikes";
+pub const DATA_ID: &str = "local.mxb.manager";
 
 /// A disposable profile root for development and first-run QA.
 ///
@@ -896,7 +896,8 @@ pub fn load(app: &AppHandle) -> anyhow::Result<AppConfig> {
     // A truncated/corrupt file is an error, not a silent empty config: callers that
     // can rebuild one (see `load_or_detect`) get the chance to, instead of the app
     // coming up pointed at nothing.
-    let raw: serde_json::Value = serde_json::from_str(&text)?;
+    let mut raw: serde_json::Value = serde_json::from_str(&text)?;
+    crate::secret_store::open_config(&mut raw)?;
     let mut cfg: AppConfig = serde_json::from_value(raw.clone())?;
 
     // Every released config predating `setupComplete` belongs to a player who completed
@@ -1113,13 +1114,17 @@ pub fn save(app: &AppHandle, cfg: &AppConfig) -> anyhow::Result<()> {
     // `mods_path` and friends directly (`set_mods_path`, `set_game_path`), and a stale
     // entry would resurrect an old folder the next time the user switched back.
     let mut cfg = cfg.clone();
+    cfg.analytics_enabled = false;
+    cfg.survey_enabled = false;
     cfg.stash_active();
     // Aside and moved in, the way `patch_file` already does it. Written in place, this file is
     // empty for as long as it takes to fill — and MXB Coach reads the same one. A read landing
     // in that window falls back to a default config, which loses the game folder and greys out
     // the very buttons the rider is reaching for.
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(&cfg)?)?;
+    let mut stored = serde_json::to_value(&cfg)?;
+    crate::secret_store::seal_config(&mut stored)?;
+    std::fs::write(&tmp, serde_json::to_string_pretty(&stored)?)?;
     std::fs::rename(&tmp, &path)?;
     crate::game::set_active(cfg.active_game);
     Ok(())
@@ -1164,6 +1169,7 @@ fn patch_file(path: &Path, keys: serde_json::Map<String, serde_json::Value>) -> 
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
         Err(e) => return Err(e.into()),
     };
+    crate::secret_store::open_config(&mut doc)?;
     let obj = doc
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("config.json isn't an object"))?;
@@ -1173,6 +1179,7 @@ fn patch_file(path: &Path, keys: serde_json::Map<String, serde_json::Value>) -> 
     }
     // Aside and moved in, so MXB App never reads half a file.
     let tmp = path.with_extension("json.tmp");
+    crate::secret_store::seal_config(&mut doc)?;
     std::fs::write(&tmp, serde_json::to_string_pretty(&doc)?)?;
     std::fs::rename(&tmp, path)?;
     Ok(())

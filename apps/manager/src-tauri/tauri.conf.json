@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MXB App",
-  "mainBinaryName": "MXB App",
-  "version": "0.20.3",
-  "identifier": "com.frost.mxbikes",
+  "productName": "MXB Local",
+  "mainBinaryName": "MXB Local",
+  "version": "0.20.6-local.1",
+  "identifier": "local.mxb.manager",
   "build": {
     "beforeDevCommand": "bun run dev",
     "beforeBuildCommand": "bun run build",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "MXB App",
+        "title": "MXB Local",
         "width": 1400,
         "height": 800,
         "minWidth": 1000,
@@ -25,33 +25,30 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: imgcache: http://imgcache.localhost https://imgcache.localhost; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://imgcache.localhost https://imgcache.localhost https://api.mxbsecure.com https://raw.githubusercontent.com; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     }
   },
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["mxb"]
+        "schemes": [
+          "mxblocal"
+        ]
       }
-    },
-    "updater": {
-      "endpoints": [
-        "https://github.com/Frostn1/mxb-app/releases/latest/download/latest.json"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdDRjEwQjlFQjhBQ0REOTQKUldTVTNheTRuZ3Z4ZklVZmltc3lLdWJtMUoxOUlycGhmbUJOL0JGMW5tMjlwblZtZzNaa2JGdVIK"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "app", "dmg", "appimage", "deb", "rpm"],
+    "targets": [
+      "nsis"
+    ],
     "category": "Game",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "licenseFile": "../../../LICENSE",
-    "publisher": "Frost",
-    "copyright": "Copyright © 2026 Frost",
-    "homepage": "https://github.com/Frostn1/mxb-app",
-    "shortDescription": "MX Bikes mod manager",
-    "longDescription": "MXB App is a mod manager for MX Bikes — browse mxb-mods.com, install tracks, bikes and paints with one click, and let FrostMod reload the game for you.",
+    "publisher": "Independent local fork",
+    "copyright": "Copyright \u00a9 2026 Frost",
+    "shortDescription": "Personal MX Bikes mod manager",
+    "longDescription": "MXB App is a mod manager for MX Bikes \u2014 browse mxb-mods.com, install tracks, bikes and paints with one click, and let FrostMod reload the game for you.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -62,9 +59,10 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "installerHooks": "installer-hooks.nsh",
         "installerIcon": "icons/icon.ico",
-        "languages": ["English"]
+        "languages": [
+          "English"
+        ]
       }
     }
   }

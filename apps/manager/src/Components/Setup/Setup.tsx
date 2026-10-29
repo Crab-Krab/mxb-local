@@ -90,7 +90,7 @@ export default function Setup({ onComplete, game, games, firstRun }: SetupProps)
   // A first run always asks explicitly. The provider may infer "enabled" for an existing
   // FrostMod install as a backwards-compatibility measure, but that is not consent for a
   // new setup (and a stale localStorage choice should not silently skip this screen).
-  const needsIntegration = firstRun;
+  const needsIntegration = false; // Private game DLLs are not installed by this fork.
   const [phase, setPhase] = useState<
     "game" | "detect" | "folders" | "integration"
   >(

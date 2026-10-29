@@ -1531,6 +1531,9 @@ fn release_binaries(rel: &Release) -> anyhow::Result<Vec<(&'static str, &Asset)>
 /// ([`crate::proton`]), in a CrossOver/Whisky bottle on macOS ([`crate::winehost`]) — so
 /// the same two binaries go into the same prefix as the game and do the same job.
 pub async fn install(app: &AppHandle) -> anyhow::Result<InstallReport> {
+    if !crate::local_security::ALLOW_NATIVE_DOWNLOADS {
+        anyhow::bail!("Automatic game-DLL installation is disabled in MXB Local. Existing game mods can still be managed.");
+    }
     if cfg!(not(any(windows, target_os = "linux", target_os = "macos"))) {
         anyhow::bail!("FrostMod runs on Windows, Linux (Proton) and macOS (Wine)");
     }

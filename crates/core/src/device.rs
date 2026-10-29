@@ -69,10 +69,7 @@ pub async fn device_hash_async() -> Option<&'static str> {
 
 /// A request with the device header added, when there is a hash to add.
 pub async fn with_device(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-    match device_hash_async().await {
-        Some(hash) => request.header(DEVICE_HEADER, hash),
-        None => request,
-    }
+    request // No persistent machine identifier is sent by this fork.
 }
 
 /// The OS's machine identifier. Read here and hashed immediately; never logged, stored or sent.

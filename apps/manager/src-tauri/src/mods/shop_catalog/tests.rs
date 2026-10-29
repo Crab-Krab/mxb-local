@@ -516,7 +516,7 @@ fn description_html_is_stripped_of_anything_executable() {
 #[test]
 fn stripping_does_not_eat_a_tag_that_merely_starts_the_same_way() {
     let html = sanitize_html("<p>a</p><scriptish>b</scriptish>").unwrap();
-    assert!(html.contains("scriptish"), "<scriptish> is not <script>");
+    assert_eq!(html, "<p>a</p>b", "unknown markup keeps text only");
 }
 
 #[test]

@@ -155,7 +155,7 @@ function lookup(
  */
 /** The product name, for the handful of rendered strings that are hardcoded English
  *  rather than dictionary entries. Same source as the `{{app}}` placeholder. */
-export const APP_NAME: string = import.meta.env.VITE_APP_NAME;
+export const APP_NAME: string = import.meta.env.VITE_APP_NAME || "MXB Local";
 
 let ambientVars: TVars = { app: APP_NAME };
 

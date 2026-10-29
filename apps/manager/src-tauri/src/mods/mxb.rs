@@ -755,7 +755,7 @@ pub async fn detail(slug: &str) -> anyhow::Result<ModDetail> {
     images.extend(extract_images(&content));
     dedup(&mut images);
 
-    let description_html = strip_images(&content);
+    let description_html = super::shop_catalog::sanitize_html(&strip_images(&content)).unwrap_or_default();
 
     // 2. Download links + version from the rendered page HTML. A block here used to be
     // swallowed: a 403 is `Ok(resp)`, so its error body went to the parsers and produced

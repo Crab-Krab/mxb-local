@@ -179,31 +179,7 @@ async fn send(
 /// app to have an opinion about it as well. The one thing they are asked is whether to send
 /// the dump, and that is a separate question the UI puts to them once.
 pub async fn flush(app_version: &str, cfg: &AppConfig, frostmod_dir: &Path, build: &str) {
-    let token = cfg.cp_token.trim();
-    if token.is_empty() {
-        return; // not enrolled: there is nowhere for a report to go
-    }
-    let waiting = pending(frostmod_dir);
-    if waiting.is_empty() {
-        return;
-    }
-    log::info!("crash reports: {} waiting to send", waiting.len());
-
-    for path in waiting.into_iter().take(MAX_PER_PASS) {
-        let Ok(body) = std::fs::read_to_string(&path) else { continue };
-        match send(token, app_version, cfg.cp_guid.trim(), build, &body, frostmod_dir).await {
-            Ok(()) => {
-                mark_sent(&path);
-                log::info!("crash reports: sent {}", path.display());
-            }
-            Err(e) => {
-                // Left on disk on purpose. The next pass tries again, and the control plane
-                // will not count it twice if this one actually landed.
-                log::warn!("crash reports: {} not sent ({e})", path.display());
-                break; // one failure means the network, not the file; stop for now
-            }
-        }
-    }
+    let _ = (app_version, cfg, frostmod_dir, build); // No automatic report uploads.
 }
 
 
