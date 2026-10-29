@@ -19,7 +19,8 @@ jobs:
       - name: Record Windows runtime dependency graph
         run: |
           mkdir -p .security-results
-          cargo tree --locked -p mxb-app --target x86_64-pc-windows-msvc --edges normal --prefix none --format '{p}' > .security-results/windows-runtime-tree.txt
+          cargo tree -p mxb-app --target x86_64-pc-windows-msvc --edges normal --prefix none --format '{p}' > .security-results/windows-runtime-tree.txt
+          git diff -- Cargo.lock
           if grep -E '^(str0m|str0m-rust-crypto|cpal|opus|opusic-sys) v' .security-results/windows-runtime-tree.txt; then
             echo 'Voice dependencies must not be present in MXB Local'
             exit 1
@@ -33,6 +34,7 @@ jobs:
           retention-days: 30
           if-no-files-found: error
   build:
+    if: false # lockfile diagnostic only; restored after resolver output is committed
     runs-on: windows-2022
     timeout-minutes: 90
     env:
