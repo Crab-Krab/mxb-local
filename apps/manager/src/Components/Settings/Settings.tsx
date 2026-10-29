@@ -2545,65 +2545,6 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
   );
 }
 
-/** A labelled 0..max slider that saves on release rather than on every pixel.
- *
- * Dragging fires a change per frame; committing each one would rewrite the config file
- * dozens of times for one gesture. The displayed value tracks the thumb regardless, so
- * the deferred save is invisible. */
-function LevelSlider({
-  label,
-  value,
-  min,
-  max,
-  disabled,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  disabled?: boolean;
-  onCommit: (v: number) => void;
-}) {
-  const [local, setLocal] = useState(value);
-  const [dragging, setDragging] = useState(false);
-  // Follow the config while idle, so an external change (or a failed save that reverted)
-  // is reflected instead of being masked by stale local state.
-  useEffect(() => {
-    if (!dragging) setLocal(value);
-  }, [value, dragging]);
-
-  const commit = () => {
-    setDragging(false);
-    onCommit(local);
-  };
-
-  return (
-    <div className={cn("flex items-center gap-4", disabled && "opacity-60")}>
-      <span className="w-[130px] flex-none text-[12.5px] text-foreground/85">{label}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={0.01}
-        value={local}
-        disabled={disabled}
-        onChange={(e) => {
-          setDragging(true);
-          setLocal(Number(e.target.value));
-        }}
-        onPointerUp={commit}
-        onKeyUp={commit}
-        onBlur={() => dragging && commit()}
-        className="h-1.5 flex-1 cursor-default appearance-none rounded-full bg-foreground/[0.12] accent-primary disabled:opacity-50"
-      />
-      <span className="w-[42px] flex-none text-right font-mono text-[11.5px] text-muted-foreground">
-        {Math.round((local / max) * 100)}%
-      </span>
-    </div>
-  );
-}
-
 /** One log location: where it is, what's in it, and a way into the folder.
  *
  * The line under the path is the point of the row. "3 files, newest 12 minutes ago" is
