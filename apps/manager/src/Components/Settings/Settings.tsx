@@ -66,8 +66,6 @@ import {
   setProfilesPath,
   setRunInBackground,
   setWatchModsReload,
-  setBetaUpdates,
-  setAutoUpdates,
   setWineRunner,
   wineHostInfo,
   type WineHostInfo,
@@ -149,7 +147,6 @@ import {
   SelectValue,
 } from "@frost/shared/Components/ui/select";
 import { Switch } from "@frost/shared/Components/ui/switch";
-import SurveySetting from "@frost/shared/Components/Survey/SurveySetting";
 import UninstallSetting from "@frost/shared/Components/Uninstall/UninstallSetting";
 import { cn } from "@frost/shared/lib/utils";
 import { Mxbmrp3SettingsRow } from "../Mxbmrp3/Mxbmrp3Suggestion";
@@ -606,8 +603,6 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
       void off.then((f) => f());
     };
   }, []);
-  const betaUpdates = config.betaUpdates ?? false;
-  const autoUpdates = config.autoUpdates ?? true;
   const overlayEnabled = config.overlayEnabled ?? true;
   const overlayHotkey = config.overlayHotkey || FALLBACK_HOTKEY;
   // Off unless it was turned on, matching the backend's default.
@@ -859,26 +854,6 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
   const toggleWatchModsReload = async (v: boolean) => {
     try {
       await setWatchModsReload(v);
-      await reloadConfig();
-    } catch (e) {
-      toast.error(t("settings.updateFailed"), { description: String(e) });
-    }
-  };
-
-  const toggleBetaUpdates = async (v: boolean) => {
-    try {
-      await setBetaUpdates(v);
-      await reloadConfig();
-      // Turning it on is asking for a beta: look now, not at the next poll.
-      if (v) void checkForUpdates();
-    } catch (e) {
-      toast.error(t("settings.updateFailed"), { description: String(e) });
-    }
-  };
-
-  const toggleAutoUpdates = async (v: boolean) => {
-    try {
-      await setAutoUpdates(v);
       await reloadConfig();
     } catch (e) {
       toast.error(t("settings.updateFailed"), { description: String(e) });
@@ -1477,10 +1452,8 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
               onChange={toggleStartup}
             />
             <div className="h-px bg-border" />
-            {/* Whether the app may ask anything. Shared with the Studio and Coach so the
-                switch reads the same wherever it is found — see the component. */}
-            <SurveySetting />
-            <div className="h-px bg-border" />
+            {/* MXB Local: the survey switch is removed. Surveys are disabled and forced off on
+                every save (config.rs), so the switch did nothing. */}
             <ToggleRow
               label={t("settings.instantRefresh")}
               desc={
@@ -2475,18 +2448,8 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
                 <MessagesSquare className="size-3.5" /> Join the Discord
               </Button>
             </div>
-            <ToggleRow
-              label={t("settings.betaUpdates")}
-              desc={t("settings.betaUpdatesDesc")}
-              checked={betaUpdates}
-              onChange={toggleBetaUpdates}
-            />
-            <ToggleRow
-              label={t("settings.autoUpdates")}
-              desc={t("settings.autoUpdatesDesc")}
-              checked={autoUpdates}
-              onChange={toggleAutoUpdates}
-            />
+            {/* MXB Local: the beta-channel and automatic-update switches are removed. Automatic
+                updates are disabled in this fork, so they changed nothing. */}
             <div className="flex flex-col gap-1 pt-1 text-[11.5px] text-faint">
               <div className="flex items-center gap-1.5">
                 <span>{t("settings.madeWith")}</span>

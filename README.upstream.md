@@ -1,3 +1,6 @@
+> **Upstream reference.** This is the original MXB App README, kept for context. It does not
+> describe MXB Local. See [README.md](README.md).
+
 <p align="center">
   <a href="https://mxbsecure.com/app"><img src="docs/brand/mxb-app.png" alt="MXB App, from mxbsecure. Mods in one click." width="720"></a>
 </p>

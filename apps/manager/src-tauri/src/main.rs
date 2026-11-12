@@ -8275,7 +8275,7 @@ const TIER_SAFE: u8 = 1;
 
 /// The bundle identifier, from `tauri.conf.json`. Duplicated because the record below is
 /// read before Tauri exists to be asked.
-const APP_IDENTIFIER: &str = "com.frost.mxbikes";
+const APP_IDENTIFIER: &str = "local.mxb.manager";
 
 /// How far the last run got.
 ///
@@ -8553,7 +8553,7 @@ fn main() {
         .manage(shop_session::ShopSession::default())
         .manage(hub_session::HubSession::default())
         .setup(|app| {
-            log::info!("MXB App {} starting", env!("CARGO_PKG_VERSION"));
+            log::info!("MXB Local {} starting", env!("CARGO_PKG_VERSION"));
             // Before anything can seal or unseal a key, which loads `mxbsecure.dll` into this
             // process: an older install's DLL left beside the exe killed the app on start.
             secure_launch::purge_stale_dlls(app.handle());
