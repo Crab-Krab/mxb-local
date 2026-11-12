@@ -3,11 +3,10 @@
 This is an independent Windows build of Frostn1/mxb-app v0.20.6. It keeps the
 upstream MIT license and attribution. It is not an official Frost/mxbsecure release.
 
-**Build status: local.2 built successfully and passed its Windows build and
-security checks. Local testing confirmed OEM bikes in Library, track descriptions
-and popularity browsing. ReShade has no entries in the tested top-100 overall
-ranking; Newest and Oldest still show that full category. A later source-only
-wording correction explains this case without claiming the category is empty.**
+**Build status: local.4 passed the full Windows build: every Rust and frontend test,
+typecheck, lint, both browser test suites, the Visual C++ runtime import check,
+installer packaging and build attestation. It has not been installed and launched on
+a clean Windows PC, and DPAPI recovery has not been exercised on a real profile.**
 
 ## What changes
 
@@ -29,6 +28,36 @@ wording correction explains this case without claiming the category is empty.**
   available. Closing the app exits it by default.
 - Name: **MXB Local**. Settings: `%LOCALAPPDATA%\local.mxb.manager`.
   It does not import or overwrite the original app's settings or cookies.
+
+## Changes in local.4
+
+Work from the November 2026 technical audit.
+
+- All checks run on every build: the full Rust workspace tests (about 1,900), the
+  frontend unit tests, typecheck and lint. Two inherited tests that contradicted the
+  fork's stricter rules were updated, and two frontend tests were brought up to date.
+- A saved credential DPAPI can no longer open (password reset by an administrator,
+  recreated profile, config copied from another PC) is treated as signed out. Before,
+  it failed the whole config load and the app silently rebuilt default settings. A
+  config that cannot be read is now copied to `config.json.bak` before anything
+  replaces it.
+- The C and C++ runtimes are linked statically. The app no longer imports
+  `MSVCP140.dll` or `VCRUNTIME140.dll`, so it starts without the Visual C++
+  redistributable. The build fails if those imports come back. The in-app
+  redistributable installer, which ran a downloaded program elevated, is disabled.
+- No request to the upstream service at startup, no upload of the server list while
+  the Online screen is open, and no supporters-list fetch from GitHub. Friends
+  presence is off by default. Description images on hosts outside the image-cache
+  allowlist are removed. Requests identify as `mxb-local`. See
+  [docs/privacy-local.md](docs/privacy-local.md).
+- Archives may unpack to at most 20 times their own size, with a 4 GiB floor.
+- The unused updater plugin, vendored MEGA client and orphaned voice sources are gone
+  (23 fewer packages in `Cargo.lock`). rollup is updated and five unused frontend
+  packages are removed.
+- Settings no longer shows update and survey switches that did nothing.
+- Releases are published from workflow inputs instead of hard-coded values, and each
+  build carries a GitHub build-provenance attestation.
+- Upstream-only documents are marked as upstream reference.
 
 ## Changes in local.3
 
@@ -52,7 +81,7 @@ wording correction explains this case without claiming the category is empty.**
   links and oversized pages are rejected. Category metadata and pagination are
   checked, and cached results avoid repeated ranking requests while paging.
 
-See [the local.3 dependency review](SECURITY-REVIEW-local.3.md) for the raw-scan
+See [the local.4 dependency review](SECURITY-REVIEW-local.4.md) for the raw-scan
 interpretation, affected-API analysis and remaining maintenance concerns.
 
 ## Features and limits
@@ -74,7 +103,7 @@ this fork. The fork cannot promise compatibility with every upstream feature.
 
 ## Download a published build
 
-Use the [local.3 release](https://github.com/Crab-Krab/mxb-local/releases/tag/v0.20.6-local.3)
+Use the [latest release](https://github.com/Crab-Krab/mxb-local/releases/latest)
 for the Windows installer, SHA-256 checksum and license. Release assets are separate
 from temporary Actions artifacts. This is the verified installer from the successful
 Windows build, not a newly rebuilt application.
@@ -89,12 +118,17 @@ confuse an unsigned local build with the publisher-signed upstream installer.
 
 The workflow has read-only repository permissions, uses no account secrets, does
 not publish a release, and does not upload game files or personal settings. It
-uploads build artifacts and lockfiles to your repository's Actions run.
+uploads build artifacts and lockfiles to your repository's Actions run. The build
+job alone may also request a short-lived signing identity (`id-token`) to attach a
+build-provenance attestation to the installer; pull request builds skip that step.
 
 A separate, explicitly scoped publishing workflow uses repository write permission
-to attach the verified build to a GitHub Release. It checks the successful source
-build, archive digest, installer digest and published asset digests. It does not
-build or execute the desktop app, or upload game files or personal settings.
+to attach the verified build to a GitHub Release. It is run by hand with four inputs:
+the build run ID, the release tag, the installer SHA-256 (shown in the build run's
+summary) and the security review file. It checks the successful source build, archive
+digest, installer digest and published asset digests, and takes release notes from
+`release-notes/<tag>.md`. It does not build or execute the desktop app, or upload game
+files or personal settings.
 
 ## Local build for maintainers
 
@@ -103,9 +137,8 @@ Python 3.11+, Bun, and WebView2 as described by Tauri's official prerequisites.
 Then run `scripts/build-local.ps1` from a Visual Studio developer PowerShell.
 
 The build script verifies the checked-in TLS versions, refreshes only the selected
-TLS packages if those checks fail, builds the frontend,
-runs the Windows credential-storage, setup-readiness, backend security and archive
-regressions, then creates an NSIS installer. The GitHub workflow first runs browser
+TLS packages if those checks fail, runs the frontend tests, typecheck and lint, builds
+the frontend, runs the full Rust workspace test suite, then creates an NSIS installer. The GitHub workflow first runs browser
 description and setup tests, and records dependency-review evidence.
 The checked-in Cargo.lock and bun.lock are the versions from the verified build.
 

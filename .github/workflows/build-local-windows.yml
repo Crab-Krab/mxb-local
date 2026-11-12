@@ -163,6 +163,12 @@ jobs:
           Copy-Item Cargo.lock,bun.lock,LOCAL-FORK.md,LICENSE delivery/
           Copy-Item .security-results/frontend-runtime-modules.json delivery/
           Get-ChildItem delivery/*.exe | Get-FileHash -Algorithm SHA256 | Format-List | Out-File delivery/SHA256.txt
+          # Also in the log and the run summary, so the hash the publish workflow asks for can be
+          # read without downloading the artifact.
+          Get-Content delivery/SHA256.txt | Write-Host
+          Get-ChildItem delivery/*.exe | ForEach-Object {
+            "Installer ``$($_.Name)`` SHA-256: ``$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())``" | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
       - name: Attest that the installer was built by this workflow
         if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

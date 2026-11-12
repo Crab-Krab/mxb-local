@@ -1,7 +1,7 @@
 # MXB Local: what the app contacts
 
-Applies to builds after 0.20.6-local.3. In local.3 itself, the startup request, the server-list
-upload and the supporters fetch listed under "Never" below still happen.
+Applies to 0.20.6-local.4 and later. In local.3 and earlier, the startup request, the
+server-list upload and the supporters fetch listed under "Never" below still happen.
 
 This note is specific to MXB Local. [`privacy.md`](privacy.md) is the upstream document for
 MXB App, MXB Studio, MXB Coach and FrostMod, and describes data collection that this fork has
