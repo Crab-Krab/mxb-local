@@ -89,3 +89,29 @@ selects the exact local.3 filename and independently pins its digest. A subseque
 workflow-only fix selects the configured version when creating future artifacts.
 Release attachments persist the finding inventory, affected-version data and source
 references; full advisory prose and proof-of-concept code are omitted there.
+
+## Addendum: dependency refresh after the November 2026 audit
+
+Date: November 12, 2026. RustSec advisory database at commit `fd6f398` (2026-11-11), matched
+against `Cargo.lock` by version range. The OSV service could not be reached from the review
+environment, so this is a RustSec-only check. The table above still applies to every entry
+that remains.
+
+- `tauri-plugin-updater` was removed from both crates. It was never registered. Removing it took
+  14 packages out of the lockfile, among them `zip 4.6.1`, `tar` and `minisign-verify`. `vendor/mega` was removed from
+  the workspace, which also dropped `indicatif`, `console`, `number_prefix` and `pin-utils`.
+  `reqwest 0.13` remains, because Tauri itself depends on it.
+- RustSec matches went from 45 to 39. Gone: the four `zip 4.6.1` advisories,
+  RUSTSEC-2026-0441 (`pin-utils`, unmaintained) and RUSTSEC-2025-0119 (`number_prefix`,
+  unmaintained).
+- New since this review was written, and still matched:
+  - [RUSTSEC-2026-0429](https://rustsec.org/advisories/RUSTSEC-2026-0429.html), `zip 2.4.2`,
+    denial of service in `ZipArchive::extract` through symlinks. No Rust source calls
+    `ZipArchive::extract`, `ZipStreamReader` or `sevenz_rust::decompress`. The `.extract`
+    calls in `bundle.rs` and `fileshare.rs` are the app's own `Fetched::extract`, which goes
+    through the guarded `install::extract_archive` / `extract_zip_from`. ZIP links are
+    rejected before anything is written. Not reachable.
+  - RUSTSEC-2026-0486, `rustix 1.1.4`, uninitialized memory in `getxattr` and related calls.
+    Extended attributes are a Unix interface. Not part of the Windows build.
+- `sevenz-rust` is unmaintained (RUSTSEC-2026-0246). Its maintained successor `sevenz-rust2`
+  should be evaluated as a separate, tested change, since 7z extraction is security-relevant.

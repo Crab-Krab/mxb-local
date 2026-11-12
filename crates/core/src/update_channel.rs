@@ -9,9 +9,10 @@
 //! (scripts/coach-update-bridge.sh), and the prefix is what keeps them off the manager's own
 //! `v` releases.
 
+// MXB Local: `check` is compiled out, so the helpers it used are only reached by the tests.
+#![cfg_attr(not(test), allow(dead_code))]
+
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
-use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Deserialize)]
 struct Release {
@@ -87,6 +88,10 @@ fn is_update(
 ///
 /// `current_tag` is the release tag this build came from (`v0.19.0-beta.2`), when it has one;
 /// see [`is_update`] for why it matters.
+///
+/// MXB Local: compiled out (`cfg(any())` is never true), together with the updater plugin it
+/// needs. Kept as text so upstream changes to it still merge cleanly.
+#[cfg(any())]
 pub async fn check(
     webview: &tauri::Webview,
     repo: &str,
@@ -109,6 +114,8 @@ pub async fn check(
     let Some((newest, manifest)) = newest_release(&releases, prefix, beta) else {
         return Ok(None);
     };
+    use tauri::Manager;
+    use tauri_plugin_updater::UpdaterExt;
     let current_tag =
         current_tag.and_then(|t| semver::Version::parse(t.trim().strip_prefix(prefix).unwrap_or(t.trim())).ok());
     let updater = webview

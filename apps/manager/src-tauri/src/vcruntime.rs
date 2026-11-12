@@ -66,6 +66,11 @@
 //! `tests::the_installer_probes_the_same_runtime_we_do` for what keeps the two copies
 //! from drifting.
 //!
+//! MXB Local: the installer hook is not used. The fork links the C and C++ runtimes
+//! statically instead (`.cargo/config.toml`), so the app's own image imports none of these
+//! DLLs. Installing a runtime for the game from here is disabled with the other native
+//! downloads (`local_security::ALLOW_NATIVE_DOWNLOADS`).
+//!
 //! We detect both, and can install either. Detection is deliberately conservative: when
 //! we can't tell, we report nothing missing. Telling a working player their PC is broken
 //! is worse than staying quiet.
@@ -851,6 +856,12 @@ pub async fn install(
     game_dir: Option<&std::path::Path>,
 ) -> anyhow::Result<InstallOutcome> {
     use tauri::Manager;
+
+    // This downloads an installer and runs it with administrator rights, so it falls under the
+    // same review-first rule as every other native download in this fork.
+    if !crate::local_security::ALLOW_NATIVE_DOWNLOADS {
+        anyhow::bail!("Automatic runtime installation is disabled in MXB Local. Install the Microsoft Visual C++ Redistributable from Microsoft's website if a game mod needs it.");
+    }
 
     let dir = app
         .path()

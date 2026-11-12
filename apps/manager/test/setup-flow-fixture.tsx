@@ -3,9 +3,11 @@ import { createRoot } from 'react-dom/client';
 import Setup from '../src/Components/Setup/Setup';
 import { readConfig } from './setup-flow-mocks';
 
+// A partial game list is enough for the setup screen under test.
 const games = [
   { id: 'mxb', display: 'MX Bikes' },
   { id: 'gpb', display: 'GP Bikes' },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;
 function Fixture() {
   const [config, setConfig] = useState(readConfig);

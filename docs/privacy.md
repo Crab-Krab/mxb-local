@@ -1,3 +1,7 @@
+> **Upstream reference.** This document describes the original MXB App, Studio, Coach and
+> FrostMod. MXB Local has turned most of it off. See [privacy-local.md](privacy-local.md) for what
+> MXB Local contacts.
+
 # Privacy
 
 This is what MXB App, MXB Studio, MXB Coach and FrostMod send, what mxbsecure holds, how long

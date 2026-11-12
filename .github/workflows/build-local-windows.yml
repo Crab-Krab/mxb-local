@@ -3,7 +3,9 @@ name: Build MXB Local for Windows
 on:
   workflow_dispatch:
   push:
-    branches: [local-security-fork]
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -43,16 +45,21 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.12
       - name: Check frontend before the native build
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          npm install --global bun@1.3.12
-          if ($LASTEXITCODE -ne 0) { throw 'Bun installation failed' }
           bun install --frozen-lockfile
           if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed' }
-          bun test apps/manager/test/finishSetup.test.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'Setup regressions failed' }
+          bun test
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend unit tests failed' }
+          bun run typecheck
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend type check failed' }
+          bun run lint
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend lint failed' }
           bun run --cwd apps/manager build
           if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
       - name: Run description rendering regressions
@@ -78,6 +85,12 @@ jobs:
     needs: frontend-checks
     runs-on: windows-2022
     timeout-minutes: 90
+    # Only this job signs anything: the attestation below proves the installer came from this
+    # workflow run and commit. `id-token` lets it get a short-lived signing certificate.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CARGO_TERM_COLOR: always
       VITE_APP_NAME: MXB Local
@@ -93,8 +106,6 @@ jobs:
           rustup toolchain install stable --profile minimal
           if ($LASTEXITCODE -ne 0) { throw 'Rust installation failed' }
           rustup default stable
-          npm install --global bun@1.3.12
-          if ($LASTEXITCODE -ne 0) { throw 'Bun installation failed' }
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $vs) { throw 'MSVC build tools not found on Windows runner' }
@@ -106,6 +117,9 @@ jobs:
               }
             }
           }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.12
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # pinned setup-python commit
         with:
           python-version: '3.12'
@@ -120,9 +134,24 @@ jobs:
           restore-keys: |
             windows-mxb-local-rust-${{ hashFiles('Cargo.lock') }}-
             windows-mxb-local-rust-
-      - name: Build and run Windows security tests
+      - name: Build and run all Windows tests
         shell: pwsh
         run: ./scripts/build-local.ps1
+      - name: Check the app needs no Visual C++ runtime DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Tauri renames the built binary to `mainBinaryName` from tauri.conf.json.
+          $config = Get-Content apps/manager/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $exe = Join-Path target/release ("{0}.exe" -f $config.mainBinaryName)
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing expected executable: $exe" }
+          $imports = dumpbin /nologo /dependents $exe
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed' }
+          $imports | Write-Host
+          # Only the Visual C++ redistributable's own DLLs. The api-ms-win-crt-* imports are the
+          # Universal C Runtime, which ships with Windows 10 and later, so nothing installs them.
+          $bad = $imports | Select-String -Pattern 'MSVCP\d+|VCRUNTIME\d+|CONCRT\d+' -CaseSensitive:$false
+          if ($bad) { throw "The executable still imports Visual C++ redistributable DLLs: $($bad -join ', ')" }
       - name: Package installer, sources and resolved lockfiles
         shell: pwsh
         run: |
@@ -134,6 +163,17 @@ jobs:
           Copy-Item Cargo.lock,bun.lock,LOCAL-FORK.md,LICENSE delivery/
           Copy-Item .security-results/frontend-runtime-modules.json delivery/
           Get-ChildItem delivery/*.exe | Get-FileHash -Algorithm SHA256 | Format-List | Out-File delivery/SHA256.txt
+          # Also in the log and the run summary, so the hash the publish workflow asks for can be
+          # read without downloading the artifact.
+          Get-Content delivery/SHA256.txt | Write-Host
+          Get-ChildItem delivery/*.exe | ForEach-Object {
+            "Installer ``$($_.Name)`` SHA-256: ``$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())``" | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+      - name: Attest that the installer was built by this workflow
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: delivery/*.exe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: MXB-Local-Windows

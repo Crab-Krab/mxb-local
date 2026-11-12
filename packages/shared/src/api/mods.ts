@@ -4218,14 +4218,8 @@ export function serverTrackCatalog(tracks: string[]): Promise<Record<string, Cat
 
 export type ServerAction = "start" | "stop" | "restart";
 
-export function listServers(): Promise<ServerRef[]> {
-  return invoke<ServerRef[]>("list_servers");
-}
-
-/** Replace the whole saved list — the UI owns add/edit/remove and ordering. */
-export function saveServers(servers: ServerRef[]): Promise<void> {
-  return invoke<void>("save_servers", { servers });
-}
+// MXB Local: `listServers` / `saveServers` removed. Their backend commands are deliberately not
+// registered (see `server_admin.rs`), so calling them could only fail.
 
 /** Commands take an id, not a token: the frontend never hands back a secret it was given. */
 export function serverStatus(id: string): Promise<ServerStatus> {

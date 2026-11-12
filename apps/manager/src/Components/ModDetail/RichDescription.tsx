@@ -69,9 +69,8 @@ export default function RichDescription({ html }: RichDescriptionProps) {
  * on the next product. `DOMParser` runs no scripts and fetches nothing — it only builds a
  * tree — so this is a rewrite, not a render.
  *
- * A host the cache won't serve is left exactly as it was — see [`isCacheableImage`]. Those
- * images aren't hotlink-protected as far as we know, so a direct load is their best chance;
- * handing them to a handler that refuses them would break the ones that work today.
+ * A host the cache won't serve is removed in MXB Local (see [`isCacheableImage`]), so a mod
+ * author can't learn who viewed a description by embedding an image from their own server.
  */
 function proxyImages(html: string): string {
   if (typeof DOMParser === "undefined") return html;
@@ -81,9 +80,15 @@ function proxyImages(html: string): string {
     if (!src) continue;
     // Direct loads must not hand the store's CDN our origin as a referer; it refuses those.
     img.setAttribute("referrerpolicy", "no-referrer");
+    // MXB Local: an image on any other host is dropped. Loading it would tell whoever runs
+    // that server the viewer's IP address and when they opened the page.
+    if (!isCacheableImage(src)) {
+      img.remove();
+      continue;
+    }
     // Rewriting into a scheme that has already proved unusable for this host would turn
     // images that load today into ones that cannot.
-    if (!isCacheableImage(src) || schemeIsBroken(src)) continue;
+    if (schemeIsBroken(src)) continue;
     const cached = cachedImage(src, DESCRIPTION_IMAGE_WIDTH);
     if (!cached) continue;
     img.setAttribute("src", cached);

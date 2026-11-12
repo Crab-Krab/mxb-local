@@ -22,7 +22,7 @@ const path = require('node:path');
       const url = new URL(route.request().url());
       return url.hostname === '127.0.0.1' ? route.continue() : route.abort();
     });
-    await page.goto(`http://127.0.0.1:${server.address().port}/test/description-security.test.html`);
+    await page.goto(`http://127.0.0.1:${server.address().port}/test/description-security.browser.html`);
     await page.waitForFunction(() => document.documentElement.dataset.testResult);
     const result = await page.locator('#result').innerText();
     console.log(result);

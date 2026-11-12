@@ -130,6 +130,7 @@ test("toMeta trims and drops what doesn't apply", () => {
     version: null,
     notes: null,
     assetId: null,
+    thumbPath: null,
   });
   expect(toMeta(form({ assetId: 3, notes: " fixed " })).notes).toBe("fixed");
 });
@@ -138,5 +139,5 @@ test("progress and links", () => {
   const job = { size: 200, sent: 50, phase: "uploading" } as UploadJob;
   expect(progressOf(job)).toBe(0.25);
   expect(progressOf({ ...job, phase: "checking" })).toBe(1);
-  expect(modPageUrl(12)).toBe("https://mxbsecure.com/mods?mod=12");
+  expect(modPageUrl("2026 RedBull KTM — Factory!", "ab12")).toBe("https://mxbsecure.com/mods/2026-redbull-ktm-factory-ab12");
 });

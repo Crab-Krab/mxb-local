@@ -1,3 +1,6 @@
+> **Upstream reference.** This changelog covers the original upstream products. MXB Local
+> releases are listed on [this repository's releases page](https://github.com/Crab-Krab/mxb-local/releases).
+
 # Changelog
 
 ## 2026-10-18 — Frost Converter v0.2.1 — One PC per license

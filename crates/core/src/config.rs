@@ -514,7 +514,8 @@ impl Default for AppConfig {
             launch_at_startup_rev: LAUNCH_AT_STARTUP_REV,
             auto_run_frostmod: false,
             queue_restart_game: false,
-            friends_presence: true,
+            // MXB Local: off unless the user turns it on.
+            friends_presence: false,
             frostmod_args: String::new(),
             instant_refresh: true,
             watch_mods_reload: true,
@@ -894,13 +895,17 @@ fn infer_game(cfg: &AppConfig) -> Option<Game> {
 
 pub fn load(app: &AppHandle) -> anyhow::Result<AppConfig> {
     let path = config_path(app);
-    let text = std::fs::read_to_string(path)?;
+    let text = std::fs::read_to_string(&path)?;
     // A truncated/corrupt file is an error, not a silent empty config: callers that
     // can rebuild one (see `load_or_detect`) get the chance to, instead of the app
-    // coming up pointed at nothing.
-    let mut raw: serde_json::Value = serde_json::from_str(&text)?;
-    crate::secret_store::open_config(&mut raw)?;
-    let mut cfg: AppConfig = serde_json::from_value(raw.clone())?;
+    // coming up pointed at nothing. Those callers then write over it, so a copy is kept first.
+    let (raw, mut cfg) = match parse_config(&text) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            back_up_unreadable(&path);
+            return Err(e);
+        }
+    };
 
     // Every released config predating `setupComplete` belongs to a player who completed
     // setup when it has a saved mods folder. An explicit `setupComplete: false`, however,
@@ -948,6 +953,23 @@ pub fn load(app: &AppHandle) -> anyhow::Result<AppConfig> {
     }
     crate::game::set_active(cfg.active_game);
     Ok(cfg)
+}
+
+fn parse_config(text: &str) -> anyhow::Result<(serde_json::Value, AppConfig)> {
+    let mut raw: serde_json::Value = serde_json::from_str(text)?;
+    crate::secret_store::open_config(&mut raw)?;
+    let cfg: AppConfig = serde_json::from_value(raw.clone())?;
+    Ok((raw, cfg))
+}
+
+/// Copy a config that failed to load to `config.json.bak` before anything can save over it, so
+/// a bad read never silently destroys the user's settings.
+fn back_up_unreadable(path: &Path) {
+    let backup = path.with_extension("json.bak");
+    match std::fs::copy(path, &backup) {
+        Ok(_) => log::warn!("config.json could not be read, kept a copy at {}", backup.display()),
+        Err(e) => log::warn!("config.json could not be read, and backing it up failed: {e:#}"),
+    }
 }
 
 /// Whether `path` is a folder the app can actually work from — the game's user folder
@@ -1758,6 +1780,25 @@ fn parse_library_paths(vdf: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unreadable_config_is_backed_up_before_anything_replaces_it() {
+        let dir = scratch("config-backup");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, "{ truncated").unwrap();
+        assert!(parse_config("{ truncated").is_err());
+        back_up_unreadable(&path);
+        assert_eq!(std::fs::read_to_string(dir.join("config.json.bak")).unwrap(), "{ truncated");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unreadable_token_no_longer_fails_the_whole_config() {
+        let (_, cfg) = parse_config(r#"{"cpToken":"abc","modsPath":"C:/Games/mods"}"#).unwrap();
+        assert_eq!(cfg.cp_token, "");
+        assert_eq!(cfg.mods_path, "C:/Games/mods");
+    }
 
     fn scratch(tag: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(

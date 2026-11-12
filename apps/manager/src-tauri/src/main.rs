@@ -207,7 +207,7 @@ fn parks_on_close(painted: bool, run_in_background: bool) -> bool {
 fn ipc_allowed(label: &str, command: &str) -> bool {
     if command.starts_with("voice_") || command.starts_with("set_voice_") { return false; }
     match label {
-        MAIN_WINDOW | "overlay" => !matches!(command,
+        MAIN_WINDOW | overlay::LABEL => !matches!(command,
             "plugin_install" | "plugin_install_payload"),
         mxb_fetch::WINDOW | shop_fetch::WINDOW => command == "plugin:event|emit",
         _ => false,
@@ -8275,7 +8275,7 @@ const TIER_SAFE: u8 = 1;
 
 /// The bundle identifier, from `tauri.conf.json`. Duplicated because the record below is
 /// read before Tauri exists to be asked.
-const APP_IDENTIFIER: &str = "com.frost.mxbikes";
+const APP_IDENTIFIER: &str = "local.mxb.manager";
 
 /// How far the last run got.
 ///
@@ -8553,7 +8553,7 @@ fn main() {
         .manage(shop_session::ShopSession::default())
         .manage(hub_session::HubSession::default())
         .setup(|app| {
-            log::info!("MXB App {} starting", env!("CARGO_PKG_VERSION"));
+            log::info!("MXB Local {} starting", env!("CARGO_PKG_VERSION"));
             // Before anything can seal or unseal a key, which loads `mxbsecure.dll` into this
             // process: an older install's DLL left beside the exe killed the app on start.
             secure_launch::purge_stale_dlls(app.handle());
@@ -8889,14 +8889,10 @@ fn main() {
             // than waiting for the first failure means the book is ready before the outage
             // instead of during it, when the control plane is exactly what a player's flaky
             // afternoon may also be failing to reach.
-            {
-                let handle = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    if serverbook::load(&handle).is_empty() {
-                        roster::seed(&handle).await;
-                    }
-                });
-            }
+            //
+            // MXB Local: not at startup. That request reached the upstream service on every
+            // fresh install before the user did anything. The sweep below still seeds an empty
+            // book from the shared one, but only once the Online screen is open.
             // Keep the server list warm from here on. The tab used to be the only thing that
             // ever read the master, which made every visit wait for a sweep and made an install
             // that never opened the tab invisible to the shared book and to the outage count.
@@ -9937,11 +9933,11 @@ mod window_tests {
         }
     }
 
-    /// ...and the guard must not touch anything else. The app's own windows keep whatever
-    /// their capability files grant.
+    /// ...and the guard must not touch the app's own local windows. The sign-in windows show
+    /// remote websites, so this fork denies them everything (see `local_security_tests`).
     #[test]
     fn the_apps_own_windows_are_unaffected_by_the_guard() {
-        for label in [MAIN_WINDOW, overlay::LABEL, SHOP_LOGIN_WINDOW, HUB_LOGIN_WINDOW] {
+        for label in [MAIN_WINDOW, overlay::LABEL] {
             for command in ["create_config", "install_mod", "plugin:event|emit"] {
                 assert!(ipc_allowed(label, command), "{label} / {command}");
             }
