@@ -148,8 +148,10 @@ jobs:
           $imports = dumpbin /nologo /dependents $exe
           if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed' }
           $imports | Write-Host
-          $bad = $imports | Select-String -Pattern 'MSVCP\d+|VCRUNTIME\d+|api-ms-win-crt-' -CaseSensitive:$false
-          if ($bad) { throw "The executable still imports Visual C++ runtime DLLs: $($bad -join ', ')" }
+          # Only the Visual C++ redistributable's own DLLs. The api-ms-win-crt-* imports are the
+          # Universal C Runtime, which ships with Windows 10 and later, so nothing installs them.
+          $bad = $imports | Select-String -Pattern 'MSVCP\d+|VCRUNTIME\d+|CONCRT\d+' -CaseSensitive:$false
+          if ($bad) { throw "The executable still imports Visual C++ redistributable DLLs: $($bad -join ', ')" }
       - name: Package installer, sources and resolved lockfiles
         shell: pwsh
         run: |
