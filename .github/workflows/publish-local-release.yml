@@ -1,17 +1,31 @@
 name: Publish verified MXB Local release
 
+# Run by hand from the Actions tab once a Windows build has passed. Nothing about a release is
+# written into this file: the build run, tag and expected installer hash are inputs, and every
+# other identifier (source commit, artifact IDs, archive digests) is read from that run and
+# checked. Release notes come from release-notes/<tag>.md.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [.github/workflows/publish-local-release.yml]
+    inputs:
+      build_run:
+        description: Run ID of the successful "Build MXB Local for Windows" run
+        required: true
+      release_tag:
+        description: Tag to publish, for example v0.20.6-local.4
+        required: true
+      installer_sha256:
+        description: SHA-256 of the installer, copied from that run's SHA256.txt
+        required: true
+      security_review:
+        description: Security review file to attach, for example SECURITY-REVIEW-local.4.md
+        required: true
 
 permissions:
   actions: read
   contents: write
 
 concurrency:
-  group: publish-mxb-local-0.20.6-local.3
+  group: publish-mxb-local-${{ inputs.release_tag }}
   cancel-in-progress: false
 
 jobs:
@@ -22,46 +36,66 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: Crab-Krab/mxb-local
-      BUILD_RUN: '40850647284'
-      BUILD_SHA: 8a59578a47841be2c7d51ee889417f310c9b50ab
-      ARTIFACT_ID: '12887474877'
-      ARCHIVE_SHA256: 391d1c9dfa78a89d464a207cf8e73c61ad67fc948ba04fc8218c92e71f955102
-      INSTALLER_SHA256: 956cd87a909388b749bd842de8b53e4117fffd74c0dba40559d91426b29909a4
-      INSTALLER: MXB Local_0.20.6-local.3_x64-setup.exe
-      RELEASE_TAG: v0.20.6-local.3
-      DEPENDENCY_ARTIFACT_ID: '12885844609'
-      DEPENDENCY_ARCHIVE_SHA256: 6768ae576895f749d9941e6b2e1d217e40d766f93e50c8a94a5ef87af847cb05
+      # Inputs reach the scripts only through the environment, never pasted into script text.
+      BUILD_RUN: ${{ inputs.build_run }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      INSTALLER_SHA256: ${{ inputs.installer_sha256 }}
+      SECURITY_REVIEW: ${{ inputs.security_review }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Verify the successful source build and artifact identity
+      - name: Check inputs, then verify the build run and its artifacts
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          import os, re, sys
+          from pathlib import Path
+          env = os.environ
+          checks = {
+              'BUILD_RUN': r'[0-9]{1,20}',
+              'RELEASE_TAG': r'v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?',
+              'INSTALLER_SHA256': r'[0-9a-fA-F]{64}',
+              'SECURITY_REVIEW': r'SECURITY-REVIEW-[A-Za-z0-9.]+\.md',
+          }
+          for name, pattern in checks.items():
+              if not re.fullmatch(pattern, env[name]):
+                  sys.exit(f'{name} is not in the expected form')
+          for path in [env['SECURITY_REVIEW'], f"release-notes/{env['RELEASE_TAG']}.md"]:
+              if not Path(path).is_file():
+                  sys.exit(f'Missing {path} on main')
+          PY
           gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" > build-run.json
-          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN/artifacts" > artifacts.json
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN/artifacts?per_page=100" > artifacts.json
           gh api "repos/$GH_REPO/git/matching-refs/tags/$RELEASE_TAG" > existing-tags.json
           python3 - <<'PY'
           import json, os
           from pathlib import Path
+          env = os.environ
           run = json.loads(Path('build-run.json').read_text())
-          assert run['conclusion'] == 'success' and run['status'] == 'completed'
-          assert run['head_sha'] == os.environ['BUILD_SHA']
-          assert run['repository']['full_name'] == os.environ['GH_REPO']
-          assert run['head_repository']['full_name'] == os.environ['GH_REPO']
+          assert run['conclusion'] == 'success' and run['status'] == 'completed', 'build run did not succeed'
+          assert run['repository']['full_name'] == env['GH_REPO']
+          assert run['head_repository']['full_name'] == env['GH_REPO'], 'build ran on a fork'
           assert run['path'] == '.github/workflows/build-local-windows.yml'
-          artifact = next(a for a in json.loads(Path('artifacts.json').read_text())['artifacts']
-                          if a['id'] == int(os.environ['ARTIFACT_ID']))
-          assert artifact['name'] == 'MXB-Local-Windows' and not artifact['expired']
-          assert artifact['digest'] == 'sha256:' + os.environ['ARCHIVE_SHA256']
-          dependency = next(a for a in json.loads(Path('artifacts.json').read_text())['artifacts'] if a['id'] == int(os.environ['DEPENDENCY_ARTIFACT_ID']))
-          assert dependency['name'] == 'dependency-review' and not dependency['expired']
-          assert dependency['digest'] == 'sha256:' + os.environ['DEPENDENCY_ARCHIVE_SHA256']
+          sha = run['head_sha']
+          def artifact(name):
+              rows = [a for a in json.loads(Path('artifacts.json').read_text())['artifacts']
+                      if a['name'] == name and not a['expired']]
+              assert len(rows) == 1, f'expected exactly one unexpired {name} artifact'
+              digest = rows[0]['digest']
+              assert digest.startswith('sha256:')
+              return rows[0]['id'], digest.removeprefix('sha256:')
+          build_id, build_digest = artifact('MXB-Local-Windows')
+          dep_id, dep_digest = artifact('dependency-review')
           for tag in json.loads(Path('existing-tags.json').read_text()):
-              if tag['ref'] == 'refs/tags/' + os.environ['RELEASE_TAG']:
-                  assert tag['object']['type'] == 'commit' and tag['object']['sha'] == os.environ['BUILD_SHA']
-          print('Verified successful build, source commit and artifact digest.')
+              if tag['ref'] == 'refs/tags/' + env['RELEASE_TAG']:
+                  assert tag['object']['type'] == 'commit' and tag['object']['sha'] == sha, \
+                      'the tag already exists on a different commit'
+          with open(env['GITHUB_ENV'], 'a') as out:
+              out.write(f'BUILD_SHA={sha}\nARTIFACT_ID={build_id}\nARCHIVE_SHA256={build_digest}\n')
+              out.write(f'DEPENDENCY_ARTIFACT_ID={dep_id}\nDEPENDENCY_ARCHIVE_SHA256={dep_digest}\n')
+          print(f'Verified successful build of {sha} and its two artifacts.')
           PY
 
       - name: Download and verify the original installer
@@ -81,70 +115,47 @@ jobs:
           python3 - <<'PY'
           import hashlib, json, os, zipfile
           from pathlib import Path
+          env = os.environ
+          installer_name = f"MXB Local_{env['RELEASE_TAG'][1:]}_x64-setup.exe"
           archive = Path('verified-build.zip').read_bytes()
-          assert hashlib.sha256(archive).hexdigest() == os.environ['ARCHIVE_SHA256']
+          assert hashlib.sha256(archive).hexdigest() == env['ARCHIVE_SHA256']
           output = Path('release-assets')
           output.mkdir()
           with zipfile.ZipFile('verified-build.zip') as z:
-              installer = z.read(os.environ['INSTALLER'])
+              assert installer_name in z.namelist(), f'{installer_name} is not in the build artifact'
+              installer = z.read(installer_name)
               digest = hashlib.sha256(installer).hexdigest()
-              assert digest == os.environ['INSTALLER_SHA256']
+              assert digest == env['INSTALLER_SHA256'].lower(), 'installer hash differs from the input'
               assert digest.upper() in z.read('SHA256.txt').decode('utf-8-sig').upper()
-              (output / os.environ['INSTALLER']).write_bytes(installer)
+              (output / installer_name).write_bytes(installer)
               (output / 'LICENSE').write_bytes(z.read('LICENSE'))
               for name in ['Cargo.lock', 'bun.lock', 'frontend-runtime-modules.json']:
                   (output / name).write_bytes(z.read(name))
-              (output / 'SHA256SUMS.txt').write_text(digest + '  ' + os.environ['INSTALLER'].replace(' ', '.') + '\n')
           dependency_archive = Path('verified-dependencies.zip').read_bytes()
-          assert hashlib.sha256(dependency_archive).hexdigest() == os.environ['DEPENDENCY_ARCHIVE_SHA256']
+          assert hashlib.sha256(dependency_archive).hexdigest() == env['DEPENDENCY_ARCHIVE_SHA256']
           with zipfile.ZipFile('verified-dependencies.zip') as z:
               (output / 'windows-runtime-tree.txt').write_bytes(z.read('windows-runtime-tree.txt'))
               findings = json.loads(z.read('dependency-advisories.json'))
               for advisory in findings['advisories']:
                   advisory.pop('details', None)
               (output / 'dependency-advisories.json').write_text(json.dumps(findings, indent=2))
-          (output / 'SECURITY-REVIEW.md').write_bytes(Path('SECURITY-REVIEW-local.3.md').read_bytes())
+          (output / 'SECURITY-REVIEW.md').write_bytes(Path(env['SECURITY_REVIEW']).read_bytes())
+          with open(env['GITHUB_ENV'], 'a') as out:
+              out.write(f'INSTALLER={installer_name}\n')
           print('Archive and installer SHA256 verified. Installer is unchanged from the tested build.')
           PY
 
       - name: Create release notes
         shell: bash
         run: |
-          cat > release-notes.md <<'NOTES'
-          ## MXB Local for Windows
-
-          An independent personal fork of [Frostn1/mxb-app](https://github.com/Frostn1/mxb-app), based on v0.20.6. The upstream MIT license and attribution are retained.
-
-          ### Install or update
-
-          Download **MXB.Local_0.20.6-local.3_x64-setup.exe** below, close MXB Local, then run the installer. Existing MXB Local settings are retained. GitHub's automatic Source code downloads contain the source, not the Windows installer.
-
-          This is the same installer produced by the [successful Windows build and regression checks](https://github.com/Crab-Krab/mxb-local/actions/runs/40850647284), from commit `8a59578a47841be2c7d51ee889417f310c9b50ab`.
-
-          ### Included
-
-          - Sanitized remote descriptions and a Content Security Policy.
-          - Patched TLS dependencies and Windows DPAPI protection for saved credentials.
-          - Automatic usage/game-memory reporting disabled; upstream app updates and native game-DLL installation blocked.
-          - Permanent first-run setup completion fix.
-          - MXB popularity browsing using the site's current public ranking, with clearer category-limit messages.
-          - MXB Local branding with an upstream source credit.
-          - Built-in voice chat excluded, including microphone access, voice commands, audio codecs and WebRTC dependencies.
-          - Setup component browser tests and archive path/link safety regressions.
-
-          The attached **SECURITY-REVIEW.md** explains the current advisory findings and which APIs/platforms they concern. Machine-readable dependency findings with source references, the Windows dependency graph, production frontend inventory and exact lockfiles are attached for review. A completed scan is not a zero-vulnerability certification.
-
-          Track download/install, gameplay, uninstall and installer replacement were manually verified with local.2. The new local.3 build has the automated checks linked above; its setup browser tests simulate native APIs.
-
-          ### Limits
-
-          - Unsigned personal build, not an official Frost/mxbsecure release. Automated checks and local smoke tests do not guarantee the absence of vulnerabilities.
-          - Popularity covers the site's top 100 overall, narrowed to the selected category. Newest and Oldest browse the full category; a category can have no entries in the top 100.
-          - Private upstream integrations and some store/geometry/server features are unavailable. Optional online features still depend on their services.
-          - Updates are installed manually from this fork.
-
-          **Installer SHA256:** `956cd87a909388b749bd842de8b53e4117fffd74c0dba40559d91426b29909a4`
-          NOTES
+          set -euo pipefail
+          {
+            cat "release-notes/$RELEASE_TAG.md"
+            printf '\n### Build\n\n'
+            printf 'This is the installer produced by the [successful Windows build and checks](https://github.com/%s/actions/runs/%s), from commit `%s`. ' "$GH_REPO" "$BUILD_RUN" "$BUILD_SHA"
+            printf 'Its build provenance can be checked with `gh attestation verify <installer> --repo %s`.\n\n' "$GH_REPO"
+            printf '**Installer SHA256:** `%s`\n' "${INSTALLER_SHA256,,}"
+          } > release-notes.md
 
       - name: Stage and verify release assets, then publish
         shell: bash
@@ -153,8 +164,9 @@ jobs:
           python3 - <<'PY'
           import hashlib, json, os, subprocess
           from pathlib import Path
-          repo, tag = os.environ['GH_REPO'], os.environ['RELEASE_TAG']
-          sha = os.environ['BUILD_SHA']
+          env = os.environ
+          repo, tag, sha = env['GH_REPO'], env['RELEASE_TAG'], env['BUILD_SHA']
+          asset_name = env['INSTALLER'].replace(' ', '.')
           def api(path, payload=None, method=None):
               args = ['gh', 'api', path]
               if method:
@@ -168,23 +180,22 @@ jobs:
               rows = [r for r in api(f'repos/{repo}/releases?per_page=100') if r['tag_name'] == tag]
               assert len(rows) <= 1
               return rows[0] if rows else None
+          checksum = (env['INSTALLER_SHA256'].lower() + '  ' + asset_name + '\n').encode()
+          (Path('release-assets') / 'SHA256SUMS.txt').write_bytes(checksum)
           release = matching_release()
           if release is None:
               subprocess.run(['gh', 'release', 'create', tag, '--repo', repo, '--target', sha,
-                              '--title', 'MXB Local 0.20.6-local.3', '--draft', '--prerelease',
+                              '--title', f'MXB Local {tag[1:]}', '--draft', '--prerelease',
                               '--notes-file', 'release-notes.md',
                               *[str(p) for p in sorted(Path('release-assets').iterdir())]], check=True)
               release = matching_release()
           assert release is not None and release['target_commitish'] == sha
           assert release['tag_name'] == tag
           release_id = release['id']
-          asset_name = 'MXB.Local_0.20.6-local.3_x64-setup.exe'
-          checksum = (os.environ['INSTALLER_SHA256'] + '  ' + asset_name + '\n').encode()
-          (Path('release-assets') / 'SHA256SUMS.txt').write_bytes(checksum)
           expected = {p.name.replace(' ', '.'): p.read_bytes() for p in Path('release-assets').iterdir()}
           release = api(f'repos/{repo}/releases/{release_id}')
           assets = {a['name']: a for a in release['assets']}
-          assert set(assets) == set(expected)
+          assert set(assets) == set(expected), 'release assets differ from the verified files'
           for name, data in expected.items():
               assert assets[name]['state'] == 'uploaded'
               assert assets[name]['size'] == len(data)

@@ -85,6 +85,12 @@ jobs:
     needs: frontend-checks
     runs-on: windows-2022
     timeout-minutes: 90
+    # Only this job signs anything: the attestation below proves the installer came from this
+    # workflow run and commit. `id-token` lets it get a short-lived signing certificate.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CARGO_TERM_COLOR: always
       VITE_APP_NAME: MXB Local
@@ -153,6 +159,11 @@ jobs:
           Copy-Item Cargo.lock,bun.lock,LOCAL-FORK.md,LICENSE delivery/
           Copy-Item .security-results/frontend-runtime-modules.json delivery/
           Get-ChildItem delivery/*.exe | Get-FileHash -Algorithm SHA256 | Format-List | Out-File delivery/SHA256.txt
+      - name: Attest that the installer was built by this workflow
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: delivery/*.exe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: MXB-Local-Windows
