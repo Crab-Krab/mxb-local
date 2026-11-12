@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
-import type { Update } from "@tauri-apps/plugin-updater";
 import { toast } from "sonner";
+/** The fields the banner reads. MXB Local never has one: automatic updates are disabled. */
+type Update = { version: string; body?: string; date?: string };
 type UpdateContextValue = {
   available: Update | null; installing: boolean; progress: number | null;
   check: (opts?: { silent?: boolean }) => Promise<void>;
