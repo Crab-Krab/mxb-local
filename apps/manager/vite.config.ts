@@ -30,7 +30,7 @@ function dependencyInventory(): Plugin {
       const output = path.resolve(__dirname, "../../.security-results");
       mkdirSync(output, { recursive: true });
       writeFileSync(path.join(output, "frontend-runtime-modules.json"), JSON.stringify(modules, null, 2));
-      for (const module of modules.filter((m) => /[\/](fflate|zod|source-map-js|nanoid)[\/]/.test(m.id))) {
+      for (const module of modules.filter((m) => /\/(fflate|zod|source-map-js|nanoid)\//.test(m.id))) {
         console.log("Runtime dependency review: " + JSON.stringify(module));
       }
     },

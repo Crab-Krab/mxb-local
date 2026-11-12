@@ -25,6 +25,23 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // MXB Local's sanitizer and its browser-only security test run in the WebView.
+    files: ["apps/manager/src/**/*.mjs", "apps/manager/test/**/*.browser.mjs"],
+    languageOptions: { globals: globals.browser },
+  },
+  {
+    // Bun unit tests written as plain JavaScript.
+    files: ["apps/manager/test/**/*.test.mjs"],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    // Node test runners that drive headless Chromium. Callbacks passed to `page.evaluate`
+    // run in the page, so browser globals are valid there too.
+    files: ["apps/manager/test/**/*.cjs"],
+    languageOptions: { sourceType: "commonjs", globals: { ...globals.node, ...globals.browser } },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2020,
