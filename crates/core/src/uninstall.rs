@@ -17,9 +17,9 @@
 //! uninstaller refuses to run over a program that's still running.
 //!
 //! "Also delete my data" is opt-in. It removes only folders named after this app's own bundle
-//! identifier, never the game folder or another app's data. MXB App's identifier is special:
-//! [`crate::config::DATA_ID`] is the folder Coach and Studio read their settings from too, so it's
-//! only offered while neither of them is installed.
+//! identifier, never the game folder or another app's data. Upstream, MXB App's folder was shared
+//! with Coach and Studio. MXB Local uses its own [`crate::config::DATA_ID`], which no other app
+//! reads, so the option is never blocked here.
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -193,16 +193,11 @@ pub fn own_dirs(candidates: &[PathBuf], identifier: &str, exists: &dyn Fn(&Path)
 
 /// The other apps that read this app's data folder, when deleting it would reset them.
 ///
-/// Only [`crate::config::DATA_ID`] is shared, so only MXB App is ever blocked.
-pub fn sharing_with(identifier: &str, installed: &dyn Fn(&str, &str) -> bool) -> Vec<String> {
-    if identifier != crate::config::DATA_ID {
-        return Vec::new();
-    }
-    APPS.iter()
-        .filter(|(_, id)| *id != identifier)
-        .filter(|(name, id)| installed(name, id))
-        .map(|(name, _)| name.to_string())
-        .collect()
+/// MXB Local keeps its data under its own [`crate::config::DATA_ID`], which none of the upstream
+/// apps read, so no folder is ever shared. Upstream blocked deletion while Coach or Studio were
+/// installed. Keeping that rule here would refuse deletion for the wrong reason.
+pub fn sharing_with(_identifier: &str, _installed: &dyn Fn(&str, &str) -> bool) -> Vec<String> {
+    Vec::new()
 }
 
 // ───────────────────────────── the helper that runs after exit ─────────────────────────────
@@ -607,13 +602,10 @@ mod tests {
     }
 
     #[test]
-    fn mxb_apps_folder_is_kept_while_coach_or_studio_use_it() {
-        let coach_only = |name: &str, _: &str| name == "MXB Coach";
-        assert_eq!(sharing_with("com.frost.mxbikes", &coach_only), ["MXB Coach"]);
-        assert!(sharing_with("com.frost.mxbikes", &|_, _| false).is_empty());
-        // Coach's and Studio's own folders are theirs alone.
-        assert!(sharing_with("com.frost.mxbcoach", &|_, _| true).is_empty());
-        assert!(sharing_with("com.frost.froststudio", &|_, _| true).is_empty());
+    fn mxb_locals_folder_is_never_shared_with_upstream_apps() {
+        let all_installed = |_: &str, _: &str| true;
+        assert!(sharing_with(crate::config::DATA_ID, &all_installed).is_empty());
+        assert!(sharing_with("com.frost.mxbikes", &all_installed).is_empty());
     }
 
     #[test]

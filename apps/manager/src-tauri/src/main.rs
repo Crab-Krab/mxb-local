@@ -207,7 +207,7 @@ fn parks_on_close(painted: bool, run_in_background: bool) -> bool {
 fn ipc_allowed(label: &str, command: &str) -> bool {
     if command.starts_with("voice_") || command.starts_with("set_voice_") { return false; }
     match label {
-        MAIN_WINDOW | "overlay" => !matches!(command,
+        MAIN_WINDOW | overlay::LABEL => !matches!(command,
             "plugin_install" | "plugin_install_payload"),
         mxb_fetch::WINDOW | shop_fetch::WINDOW => command == "plugin:event|emit",
         _ => false,
@@ -9937,11 +9937,11 @@ mod window_tests {
         }
     }
 
-    /// ...and the guard must not touch anything else. The app's own windows keep whatever
-    /// their capability files grant.
+    /// ...and the guard must not touch the app's own local windows. The sign-in windows show
+    /// remote websites, so this fork denies them everything (see `local_security_tests`).
     #[test]
     fn the_apps_own_windows_are_unaffected_by_the_guard() {
-        for label in [MAIN_WINDOW, overlay::LABEL, SHOP_LOGIN_WINDOW, HUB_LOGIN_WINDOW] {
+        for label in [MAIN_WINDOW, overlay::LABEL] {
             for command in ["create_config", "install_mod", "plugin:event|emit"] {
                 assert!(ipc_allowed(label, command), "{label} / {command}");
             }
