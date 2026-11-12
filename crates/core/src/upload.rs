@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::sync::Arc;
 
 /// The user agent every MXB app uploads with.
-pub const USER_AGENT: &str = "mxb-app";
+pub const USER_AGENT: &str = "mxb-local";
 
 /// The client an upload goes through: a cookie store, because filebin gates a download behind
 /// a cookie it sets on the first request.

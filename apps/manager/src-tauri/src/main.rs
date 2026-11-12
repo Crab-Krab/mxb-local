@@ -8889,14 +8889,10 @@ fn main() {
             // than waiting for the first failure means the book is ready before the outage
             // instead of during it, when the control plane is exactly what a player's flaky
             // afternoon may also be failing to reach.
-            {
-                let handle = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    if serverbook::load(&handle).is_empty() {
-                        roster::seed(&handle).await;
-                    }
-                });
-            }
+            //
+            // MXB Local: not at startup. That request reached the upstream service on every
+            // fresh install before the user did anything. The sweep below still seeds an empty
+            // book from the shared one, but only once the Online screen is open.
             // Keep the server list warm from here on. The tab used to be the only thing that
             // ever read the master, which made every visit wait for a sweep and made an install
             // that never opened the tab invisible to the shared book and to the outage count.

@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: imgcache: http://imgcache.localhost https://imgcache.localhost; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://imgcache.localhost https://imgcache.localhost https://api.mxbsecure.com https://raw.githubusercontent.com; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: imgcache: http://imgcache.localhost https://imgcache.localhost; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://imgcache.localhost https://imgcache.localhost https://api.mxbsecure.com; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     }
   },
   "plugins": {

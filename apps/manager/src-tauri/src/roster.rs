@@ -63,6 +63,9 @@ struct Roster {
 /// Spawned and forgotten. This hangs off something the player is waiting on, and a contribution
 /// that doesn't send is simply one that doesn't send; the next sweep sends another.
 pub fn contribute(servers: &[WorldServer]) {
+    if !crate::local_security::ALLOW_ROSTER_CONTRIBUTIONS {
+        return;
+    }
     let addresses: Vec<String> = servers
         .iter()
         .filter(|s| s.joinable && !s.address.trim().is_empty())
@@ -180,6 +183,9 @@ impl From<SnapshotRow> for WorldServer {
 /// Spawned and forgotten, and the control plane takes at most one of these a minute from
 /// everybody, so a contribution that isn't needed costs one request and is answered as fine.
 pub fn contribute_snapshot(servers: &[WorldServer]) {
+    if !crate::local_security::ALLOW_ROSTER_CONTRIBUTIONS {
+        return;
+    }
     let rows: Vec<SnapshotRow> = servers
         .iter()
         .filter(|s| !s.address.trim().is_empty() && !s.name.trim().is_empty())

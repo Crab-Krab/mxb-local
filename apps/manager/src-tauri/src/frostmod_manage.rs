@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager};
 /// the source repo go private. Asked first; the source repo stays as the fallback until the
 /// mirror has a release, so nothing changes for players before it exists.
 const REPOS: [&str; 2] = ["Frostn1/frostmod-releases", "Frostn1/frostmod"];
-pub const UA: &str = "mxb-app";
+pub const UA: &str = "mxb-local";
 
 /// The plugin is a byte-identical copy of this DLL. The legacy executable is intentionally
 /// never downloaded, launched, or used to determine installation state.

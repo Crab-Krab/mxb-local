@@ -200,8 +200,15 @@ function writeCachedManifest(manifest: SupportersManifest) {
   }
 }
 
+/**
+ * MXB Local does not fetch the list from the upstream repository: that request ran every time
+ * Settings opened. The list shipped with the build is shown instead.
+ */
+const REMOTE_SUPPORTERS = false;
+
 /** Fetch the live list. Throws on anything that isn't a usable manifest. */
 export async function fetchSupporters(): Promise<SupportersManifest> {
+  if (!REMOTE_SUPPORTERS) return readCachedManifest() ?? BUNDLED_SUPPORTERS;
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), FETCH_TIMEOUT_MS);
   try {

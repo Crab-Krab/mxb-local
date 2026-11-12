@@ -514,7 +514,8 @@ impl Default for AppConfig {
             launch_at_startup_rev: LAUNCH_AT_STARTUP_REV,
             auto_run_frostmod: false,
             queue_restart_game: false,
-            friends_presence: true,
+            // MXB Local: off unless the user turns it on.
+            friends_presence: false,
             frostmod_args: String::new(),
             instant_refresh: true,
             watch_mods_reload: true,

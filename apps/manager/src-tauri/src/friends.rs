@@ -7,7 +7,7 @@
 //!
 //! ## Presence is a promise to the rider
 //!
-//! It is on by default for anyone who has an account, and `friends_presence` turns it off in
+//! Upstream turns it on for anyone with an account. MXB Local defaults it off. `friends_presence` is
 //! one switch. Off, nothing is sent, and a row already stored is deleted at once. The control
 //! plane also has its own "hide my presence" for the same purpose; this is the local half, so
 //! the app can stop reporting without a round trip.
