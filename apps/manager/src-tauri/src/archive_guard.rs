@@ -12,12 +12,61 @@
 //! defence, but it cannot be the guard: it only looks inside the staging folder, and a file
 //! written beside it is never seen.
 //!
+//! The total unpacked size is capped too (see [`unpack_limit`]), so a small crafted archive
+//! (a "zip bomb") stops with an error instead of filling the disk.
+//!
 //! No Tauri types in here, so the checks can be exercised on their own.
 
 use anyhow::{anyhow, Result};
 use std::fs::{File, Metadata, OpenOptions};
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
+
+/// An archive may unpack to this many times its own size...
+const EXPANSION_RATIO: u64 = 20;
+/// ...but never to less than this, so small archives of very compressible files still work.
+const EXPANSION_FLOOR: u64 = 4 << 30;
+
+/// The most an archive of `archive_len` bytes may unpack to. Real mods compress a few times
+/// at most. Twenty times, with a 4 GiB floor, leaves a wide margin while still stopping an
+/// archive built to expand without limit.
+pub(crate) fn unpack_limit(archive_len: u64) -> u64 {
+    archive_len.saturating_mul(EXPANSION_RATIO).max(EXPANSION_FLOOR)
+}
+
+/// How many more bytes this archive may write.
+struct Budget<'a> {
+    left: u64,
+    limit: u64,
+    label: &'a Path,
+}
+
+impl<'a> Budget<'a> {
+    fn new(limit: u64, label: &'a Path) -> Self {
+        Budget { left: limit, limit, label }
+    }
+
+    fn exceeded(&self) -> anyhow::Error {
+        anyhow!(
+            "{} was rejected: it unpacks to more than {} MB, far beyond its own size, which is \
+             what a damaged or deliberately oversized archive looks like. The install was stopped.",
+            self.label.file_name().unwrap_or_default().to_string_lossy(),
+            self.limit / 1_000_000
+        )
+    }
+
+    /// Count `n` bytes that were (or, from a header, will be) written.
+    fn charge(&mut self, n: u64) -> Result<()> {
+        self.left = self.left.checked_sub(n).ok_or_else(|| self.exceeded())?;
+        Ok(())
+    }
+
+    /// Copy one entry, stopping one byte past the budget rather than at the entry's end.
+    fn copy(&mut self, from: &mut dyn Read, to: &mut dyn Write) -> Result<()> {
+        let written = std::io::copy(&mut from.take(self.left.saturating_add(1)), to)?;
+        self.charge(written)
+    }
+}
 
 /// Why an entry name can't be used, for the message the user sees.
 type Why = &'static str;
@@ -245,9 +294,18 @@ impl Staging {
 }
 
 /// Unpack a zip from anything that reads like one. `label` names the archive in errors.
-pub(crate) fn extract_zip<R: Read + Seek>(reader: R, dest: &Path, label: &Path) -> Result<()> {
+pub(crate) fn extract_zip<R: Read + Seek>(mut reader: R, dest: &Path, label: &Path) -> Result<()> {
+    let len = reader.seek(SeekFrom::End(0))?;
+    reader.seek(SeekFrom::Start(0))?;
+    extract_zip_within(reader, dest, label, unpack_limit(len))
+}
+
+fn extract_zip_within<R: Read + Seek>(reader: R, dest: &Path, label: &Path, limit: u64) -> Result<()> {
     let mut zip = zip::ZipArchive::new(reader)?;
     let mut planned = Vec::with_capacity(zip.len());
+    // Sizes from the directory first, so an archive that admits to being too big writes
+    // nothing. They can lie, so the copy below is capped as well.
+    let mut declared = Budget::new(limit, label);
     for i in 0..zip.len() {
         let e = zip.by_index_raw(i)?;
         let name = e.name().to_string();
@@ -255,8 +313,10 @@ pub(crate) fn extract_zip<R: Read + Seek>(reader: R, dest: &Path, label: &Path) 
             return Err(rejected(label, &name, "links are not allowed"));
         }
         let is_dir = e.is_dir() || name.ends_with('\\');
+        declared.charge(e.size())?;
         planned.push((plan(label, &name, is_dir)?, is_dir));
     }
+    let mut budget = Budget::new(limit, label);
     let staging = Staging::new(dest)?;
     for (i, (rel, is_dir)) in planned.into_iter().enumerate() {
         let Some(rel) = rel else { continue };
@@ -266,7 +326,7 @@ pub(crate) fn extract_zip<R: Read + Seek>(reader: R, dest: &Path, label: &Path) 
         }
         let mut out = staging.create_file(&rel)?;
         let mut entry = zip.by_index(i)?;
-        std::io::copy(&mut entry, &mut out)?;
+        budget.copy(&mut entry, &mut out)?;
     }
     Ok(())
 }
@@ -284,14 +344,27 @@ pub(crate) fn extract_7z_from<R: Read + Seek>(
     dest: &Path,
     label: &Path,
 ) -> Result<()> {
+    extract_7z_within(reader, len, dest, label, unpack_limit(len))
+}
+
+fn extract_7z_within<R: Read + Seek>(
+    reader: R,
+    len: u64,
+    dest: &Path,
+    label: &Path,
+    limit: u64,
+) -> Result<()> {
     let mut seven = sevenz_rust::SevenZReader::new(reader, len, sevenz_rust::Password::empty())
         .map_err(|e| anyhow!("7z extraction failed: {e}"))?;
+    let mut declared = Budget::new(limit, label);
     for e in &seven.archive().files {
         if sevenz_attr_is_link(e.has_windows_attributes, e.windows_attributes) {
             return Err(rejected(label, e.name(), "links are not allowed"));
         }
         plan(label, e.name(), e.is_directory())?;
+        declared.charge(e.size())?;
     }
+    let mut budget = Budget::new(limit, label);
     let staging = Staging::new(dest)?;
     let mut failure: Option<anyhow::Error> = None;
     seven
@@ -311,7 +384,7 @@ pub(crate) fn extract_7z_from<R: Read + Seek>(
                     staging.dir(&rel)?;
                 } else {
                     let mut out = staging.create_file(&rel)?;
-                    std::io::copy(data, &mut out)?;
+                    budget.copy(data, &mut out)?;
                 }
                 Ok(())
             })();
@@ -333,9 +406,11 @@ pub(crate) fn extract_7z_from<R: Read + Seek>(
 /// Unpack a rar: list and check every header first, then extract each file to the exact path
 /// that was checked, never letting the native library pick the name.
 pub(crate) fn extract_rar(archive: &Path, dest: &Path) -> Result<()> {
+    let limit = unpack_limit(std::fs::metadata(archive)?.len());
     let listing = unrar::Archive::new(archive)
         .open_for_listing()
         .map_err(|e| anyhow!("failed to open RAR: {e}"))?;
+    let mut declared = Budget::new(limit, archive);
     for header in listing {
         let h = header.map_err(|e| anyhow!("RAR read error: {e}"))?;
         let name = h.filename.to_string_lossy();
@@ -343,7 +418,11 @@ pub(crate) fn extract_rar(archive: &Path, dest: &Path) -> Result<()> {
             return Err(rejected(archive, &name, "links are not allowed"));
         }
         plan(archive, &name, h.is_directory())?;
+        declared.charge(h.unpacked_size)?;
     }
+    // The native library writes each file itself, so its real size is only known afterwards.
+    // The declared sizes above are the guard. This catches a header that lied about one.
+    let mut budget = Budget::new(limit, archive);
 
     let staging = Staging::new(dest)?;
     let mut open = unrar::Archive::new(archive)
@@ -367,6 +446,7 @@ pub(crate) fn extract_rar(archive: &Path, dest: &Path) -> Result<()> {
                     .extract_to(&path)
                     .map_err(|e| anyhow!("RAR extract error: {e}"))?;
                 staging.verify_plain(&path)?;
+                budget.charge(std::fs::metadata(&path)?.len())?;
                 next
             }
             other => {
@@ -496,6 +576,42 @@ mod tests {
         }
         assert!(!std::env::temp_dir().join(format!("{tag}.txt")).exists());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_zip_that_expands_past_the_limit_is_stopped() {
+        let base = tmp("zip-bomb");
+        let zeros = vec![0u8; 64 * 1024];
+        let bytes = zip_with(&[("a.bin", &zeros), ("b.bin", &zeros)]);
+        // The declared sizes alone are over the limit, so nothing is written.
+        let dest = base.join("declared");
+        let err = extract_zip_within(Cursor::new(bytes.clone()), &dest, Path::new("bomb.zip"), 100_000)
+            .unwrap_err();
+        assert!(err.to_string().contains("unpacks to more than"), "{err:#}");
+        assert!(files_under(&base).is_empty());
+        // Within the limit, the same archive unpacks.
+        let ok = base.join("ok");
+        extract_zip_within(Cursor::new(bytes), &ok, Path::new("bomb.zip"), 200_000).unwrap();
+        assert_eq!(files_under(&ok).len(), 2);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn the_copy_itself_stops_at_the_limit() {
+        let label = Path::new("bomb.zip");
+        let mut budget = Budget::new(10, label);
+        let mut out = Vec::new();
+        budget.copy(&mut &[1u8; 6][..], &mut out).unwrap();
+        let err = budget.copy(&mut &[1u8; 6][..], &mut out).unwrap_err();
+        assert!(err.to_string().contains("unpacks to more than"), "{err:#}");
+        assert!(out.len() <= 11, "stopped one byte past the budget, not at the entry's end");
+    }
+
+    #[test]
+    fn the_limit_scales_with_the_archive_and_has_a_floor() {
+        assert_eq!(unpack_limit(0), 4 << 30);
+        assert_eq!(unpack_limit(1 << 30), 20 << 30);
+        assert_eq!(unpack_limit(u64::MAX), u64::MAX);
     }
 
     #[test]
