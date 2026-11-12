@@ -29,8 +29,8 @@ serde_json = "1"
 # No feature list: the tray and the PNG icon belong to an app shell, not to this crate.
 # Cargo unifies features across the graph, so the manager still gets its own.
 tauri = "2"
-# The update channels every app shares (update_channel.rs).
-tauri-plugin-updater = "2"
+# MXB Local: `tauri-plugin-updater` removed. The fork never registers the updater plugin, and it
+# alone pulled in a second `zip` and `reqwest`. update_channel::check is compiled out.
 # The overlay hotkey both apps bind (overlay.rs).
 tauri-plugin-global-shortcut = "2"
 # The startup gate shows a message box when an install is blocked (appgate.rs); each app still
