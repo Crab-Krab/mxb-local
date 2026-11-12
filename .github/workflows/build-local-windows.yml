@@ -131,6 +131,17 @@ jobs:
       - name: Build and run all Windows tests
         shell: pwsh
         run: ./scripts/build-local.ps1
+      - name: Check the app needs no Visual C++ runtime DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'target/release/mxb-app.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing expected executable: $exe" }
+          $imports = dumpbin /nologo /dependents $exe
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed' }
+          $imports | Write-Host
+          $bad = $imports | Select-String -Pattern 'MSVCP\d+|VCRUNTIME\d+|api-ms-win-crt-' -CaseSensitive:$false
+          if ($bad) { throw "The executable still imports Visual C++ runtime DLLs: $($bad -join ', ')" }
       - name: Package installer, sources and resolved lockfiles
         shell: pwsh
         run: |

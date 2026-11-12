@@ -1,0 +1,11 @@
+# MXB Local links the Microsoft C and C++ runtimes into the executable instead of relying on
+# the Visual C++ 2015-2022 redistributable being installed.
+#
+# Upstream's installer installed that redistributable from a hook, because the app imports
+# MSVCP140.dll through the C++ sources `unrar_sys` builds, and without it Windows refuses to
+# start the app ("unable to start correctly, 0xc000007b") before any message can be shown.
+# This fork dropped that hook. With `crt-static`, Rust and every crate built through `cc`
+# (unrar included) compile against the static runtime (/MT), so there is nothing to install.
+# The Windows build workflow checks the finished executable for runtime DLL imports.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
