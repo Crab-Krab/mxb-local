@@ -141,7 +141,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = 'target/release/mxb-app.exe'
+          # Tauri renames the built binary to `mainBinaryName` from tauri.conf.json.
+          $config = Get-Content apps/manager/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $exe = Join-Path target/release ("{0}.exe" -f $config.mainBinaryName)
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing expected executable: $exe" }
           $imports = dumpbin /nologo /dependents $exe
           if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed' }
