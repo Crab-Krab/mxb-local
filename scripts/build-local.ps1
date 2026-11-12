@@ -10,18 +10,17 @@ python scripts/prepare-local-dependencies.py
 if ($LASTEXITCODE -ne 0) { throw 'Dependency preparation failed.' }
 bun install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed.' }
-bun test apps/manager/test/finishSetup.test.mjs
-if ($LASTEXITCODE -ne 0) { throw 'First-run setup regression tests failed.' }
+# Every check runs on every build. Filtered runs once let two regressions through unnoticed.
+bun test
+if ($LASTEXITCODE -ne 0) { throw 'Frontend unit tests failed.' }
+bun run typecheck
+if ($LASTEXITCODE -ne 0) { throw 'Frontend type check failed.' }
+bun run lint
+if ($LASTEXITCODE -ne 0) { throw 'Frontend lint failed.' }
 bun run --cwd apps/manager build
 if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
-cargo test --locked -p mxb-core secret_store::tests --lib
-if ($LASTEXITCODE -ne 0) { throw 'Windows credential-storage tests failed.' }
-cargo test --locked -p mxb-app local_security_tests --bin mxb-app
-if ($LASTEXITCODE -ne 0) { throw 'Backend security regression tests failed.' }
-cargo test --locked -p mxb-app setup_readiness_tests --bin mxb-app
-if ($LASTEXITCODE -ne 0) { throw 'Setup readiness regression tests failed.' }
-cargo test --locked -p mxb-app archive_guard::tests --bin mxb-app
-if ($LASTEXITCODE -ne 0) { throw 'Archive path and link safety regression tests failed.' }
+cargo test --locked --workspace
+if ($LASTEXITCODE -ne 0) { throw 'Backend test suite failed.' }
 $env:VITE_APP_NAME = 'MXB Local'
 Push-Location apps/manager
 try {
