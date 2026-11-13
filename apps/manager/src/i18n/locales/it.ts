@@ -258,7 +258,7 @@ export const it: Translation = {
   "tour.servers.body": "Condividi le tue livree, vedi quelle degli altri e avvia il tuo server.",
   "tour.settings.title": "Impostazioni",
   "tour.settings.body":
-    "Cartella del gioco, sfondo e opzioni dell'integrazione di gioco.",
+    "Cartella del gioco, sfondo e altre opzioni.",
   "tour.done.title": "È tutto pronto",
   "tour.done.body":
     "Vai su Esplora e installa la tua prima mod.",

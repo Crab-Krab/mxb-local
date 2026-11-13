@@ -34,6 +34,7 @@ import { recordActivity } from "../lib/activity";
 import { useGameRunning } from "../lib/useGameRunning";
 import { useT, type TFunc, type TKey } from "@/i18n";
 import { FrostmodContext } from "./FrostmodContext";
+import { GAME_INTEGRATION_SUPPORTED } from "../lib/localFork";
 
 const POLL_MS = 5000;
 const INTEGRATION_CHOICE_KEY = "mxb.integration-choice.v1";
@@ -41,6 +42,8 @@ const INTEGRATION_CHOICE_KEY = "mxb.integration-choice.v1";
 type IntegrationChoice = "enabled" | "app-only" | null;
 
 function savedIntegrationChoice(): IntegrationChoice {
+  // MXB Local: always app-only, so the consent dialog never opens and nothing is installed.
+  if (!GAME_INTEGRATION_SUPPORTED) return "app-only";
   try {
     const value = localStorage.getItem(INTEGRATION_CHOICE_KEY);
     return value === "enabled" || value === "app-only" ? value : null;
@@ -117,6 +120,7 @@ export function FrostmodProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const requestIntegrationConsent = useCallback(() => {
+    if (!GAME_INTEGRATION_SUPPORTED) return;
     setIntegrationConsentOpen(true);
   }, []);
 
@@ -258,7 +262,7 @@ export function FrostmodProvider({ children }: { children: ReactNode }) {
   }, [probe, t]);
 
   const install = useCallback(async () => {
-    if (installFlight.current) return;
+    if (!GAME_INTEGRATION_SUPPORTED || installFlight.current) return;
     installFlight.current = true;
     // Pressing an Install/Repair button is itself explicit consent. Remember it so a
     // manually installed component can receive future unattended compatibility fixes.
@@ -318,6 +322,7 @@ export function FrostmodProvider({ children }: { children: ReactNode }) {
   }, [rememberIntegrationChoice, running, status?.pluginOnly, stop, t]);
 
   const enableIntegration = useCallback(async () => {
+    if (!GAME_INTEGRATION_SUPPORTED) return;
     rememberIntegrationChoice("enabled");
     try {
       await setAutoRunFrostmod(true);

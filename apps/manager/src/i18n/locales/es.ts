@@ -259,7 +259,7 @@ export const es: Translation = {
   "tour.servers.body": "Comparte tus pinturas, ve las de todos y monta tu propio servidor.",
   "tour.settings.title": "Ajustes",
   "tour.settings.body":
-    "Carpeta del juego, fondo y opciones de Integración con el juego.",
+    "Carpeta del juego, fondo y otras opciones.",
   "tour.done.title": "Todo listo",
   "tour.done.body":
     "Ve a Explorar e instala tu primer mod.",

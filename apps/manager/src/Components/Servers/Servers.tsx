@@ -96,6 +96,7 @@ import {
 import { useFriends } from "@/lib/useFriends";
 import { friendsByAddress } from "@/lib/friends";
 import SavedServerDialog, { savedServerError } from "./SavedServerDialog";
+import { GAME_INTEGRATION_SUPPORTED } from "../../lib/localFork";
 
 /** A saved server that didn't answer: its address, the player's name for it, and Join left on.
  *  Everything a reply would have filled in is empty rather than guessed. */
@@ -1286,7 +1287,9 @@ const Servers = ({ link }: ServersProps) => {
                 restart it. FrostMod clears that by itself when it recognises the state, so
                 this is only here for the times it holds off — and only while there is a
                 game running to fix. */}
-            {gameRunning && (
+            {/* MXB Local: the repair is carried out by FrostMod, which this fork doesn't
+                install, so the item is hidden. */}
+            {GAME_INTEGRATION_SUPPORTED && gameRunning && (
               <DropdownMenuItem onSelect={unwedgeBrowser} disabled={unwedging}>
                 {unwedging ? (
                   <Loader2 className="size-4 animate-spin" />
