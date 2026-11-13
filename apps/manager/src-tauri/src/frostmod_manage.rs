@@ -406,7 +406,13 @@ fn install_matches_release(dir: &Path, rel: &Release) -> bool {
 
 /// Current install + latest-available snapshot. `latest` is best-effort (network).
 pub async fn status(app: &AppHandle) -> FrostmodStatus {
-    let rel = latest_release().await.ok();
+    // MXB Local: FrostMod is never installed here (`ALLOW_NATIVE_DOWNLOADS`), so there is no
+    // update to look for. Asking GitHub sent a request at every launch and every half hour.
+    let rel = if crate::local_security::ALLOW_NATIVE_DOWNLOADS {
+        latest_release().await.ok()
+    } else {
+        None
+    };
     let installed = is_installed(app);
     let version = installed_version(app);
 

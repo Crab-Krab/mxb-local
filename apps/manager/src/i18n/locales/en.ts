@@ -255,7 +255,7 @@ export const en = {
   "tour.servers.title": "Look right online",
   "tour.servers.body": "Share your paints, see everyone else's, and run your own server.",
   "tour.settings.title": "Settings",
-  "tour.settings.body": "Game folder, background and Game Integration options.",
+  "tour.settings.body": "Game folder, background and other options.",
   "tour.done.title": "You're all set",
   "tour.done.body": "Head to Browse and install your first mod.",
 

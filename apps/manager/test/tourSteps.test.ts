@@ -4,10 +4,12 @@ import { en } from "../src/i18n/locales/en";
 
 describe("tour steps", () => {
   test("a game without a capability drops the steps gated on it", () => {
-    const noViewer = stepsFor({ viewer: false, frostmod: true });
-    expect(noViewer.some((s) => s.cap === "viewer")).toBe(false);
-    expect(noViewer.some((s) => s.cap === "frostmod")).toBe(true);
-    expect(stepsFor({ viewer: true, frostmod: false }).some((s) => s.cap === "frostmod")).toBe(false);
+    expect(stepsFor({ viewer: false }).some((s) => s.cap === "viewer")).toBe(false);
+    expect(stepsFor({ viewer: true }).some((s) => s.cap === "viewer")).toBe(true);
+  });
+
+  test("MXB Local never shows the Game Integration step, even for a game that supports it", () => {
+    expect(stepsFor({ viewer: true, frostmod: true }).some((s) => s.cap === "frostmod")).toBe(false);
   });
 
   test("ungated steps survive any capability set", () => {

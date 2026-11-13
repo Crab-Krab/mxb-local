@@ -6,6 +6,7 @@ import { useConfig } from "@frost/shared/Context/Config";
 import { usePlatform } from "@frost/shared/lib/usePlatform";
 import { useT, type TKey } from "@/i18n";
 import { useFrostmod } from "../../Context/FrostmodContext";
+import { GAME_INTEGRATION_SUPPORTED } from "../../lib/localFork";
 import { versionAtLeast } from "../../lib/tips";
 import { usePaintSyncSetup } from "../../lib/usePaintSyncSetup";
 import PaintSyncConfirm from "../PaintSync/PaintSyncConfirm";
@@ -70,8 +71,10 @@ export function useTips(): { tips: Tip[]; dialogs: ReactNode } {
       id: "paint-sync",
       title: "tips.paintSyncTitle",
       body: "tips.paintSyncBody",
-      eligible:
-        paintSync.status === null
+      // MXB Local: paint sync needs FrostMod, which this fork doesn't install.
+      eligible: !GAME_INTEGRATION_SUPPORTED
+        ? false
+        : paintSync.status === null
           ? null
           : paintSync.status === "off" || paintSync.status === "needsIntegration",
       action: { label: "tips.turnItOn", run: () => setConfirming(true) },
