@@ -261,7 +261,7 @@ export const ptBR: Translation = {
   "tour.servers.body": "Compartilhe suas pinturas, veja as dos outros e rode seu próprio servidor.",
   "tour.settings.title": "Configurações",
   "tour.settings.body":
-    "Pasta do jogo, plano de fundo e opções da Integração com o Jogo.",
+    "Pasta do jogo, plano de fundo e outras opções.",
   "tour.done.title": "Tudo pronto",
   "tour.done.body":
     "Vá para Explorar e instale seu primeiro mod.",

@@ -131,6 +131,7 @@ import {
   type DownloadPrefs,
 } from "@frost/shared/lib/downloadPrefs";
 import { useFrostmod } from "../../Context/FrostmodContext";
+import { GAME_INTEGRATION_SUPPORTED } from "../../lib/localFork";
 import { formatBytes, formatDateShort } from "@frost/shared/lib/mods";
 import { copyText } from "../../lib/clipboard";
 import { UploadBar } from "../Share/TransferBar";
@@ -276,7 +277,9 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
   // FrostMod is a Win32 DLL injected into the game — which is exactly what the game is
   // everywhere it runs: natively on Windows, under Proton on Linux, in a CrossOver/Whisky
   // bottle on macOS. The app starts FrostMod in whichever prefix holds the game.
-  const hasFrostmod = isWindows || platform === "linux" || isMac;
+  // MXB Local: false, which hides the Game Integration and Paint sync sections and the
+  // FrostMod logs row (see `lib/localFork`).
+  const hasFrostmod = GAME_INTEGRATION_SUPPORTED && (isWindows || platform === "linux" || isMac);
   const { theme, setTheme, colorway, setColorway, scale, setScale } = useTheme();
   // Which download to take when a mod offers several — see `lib/downloadPrefs`.
   const [dlPrefs, setDlPrefsState] = useState<DownloadPrefs>(readDownloadPrefs);
@@ -1454,20 +1457,25 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
             <div className="h-px bg-border" />
             {/* MXB Local: the survey switch is removed. Surveys are disabled and forced off on
                 every save (config.rs), so the switch did nothing. */}
-            <ToggleRow
-              label={t("settings.instantRefresh")}
-              desc={
-                !caps.instantRefresh
-                  ? t("settings.instantRefreshMxOnly", { game: game.display })
-                  : isWindows
-                    ? t("settings.instantRefreshDesc")
-                    : t("settings.instantRefreshWindowsOnly")
-              }
-              checked={instantRefresh && caps.instantRefresh}
-              disabled={!caps.instantRefresh}
-              onChange={toggleInstantRefresh}
-            />
-            <div className="h-px bg-border" />
+            {/* MXB Local: instant preset refresh is sent through FrostMod, so it is hidden. */}
+            {GAME_INTEGRATION_SUPPORTED && (
+              <>
+                <ToggleRow
+                  label={t("settings.instantRefresh")}
+                  desc={
+                    !caps.instantRefresh
+                      ? t("settings.instantRefreshMxOnly", { game: game.display })
+                      : isWindows
+                        ? t("settings.instantRefreshDesc")
+                        : t("settings.instantRefreshWindowsOnly")
+                  }
+                  checked={instantRefresh && caps.instantRefresh}
+                  disabled={!caps.instantRefresh}
+                  onChange={toggleInstantRefresh}
+                />
+                <div className="h-px bg-border" />
+              </>
+            )}
             {/* Closing the game for a server turn sits here rather than with the queue:
                 it is the app deciding it may shut the game down, which is the same kind of
                 permission as launching at startup. */}

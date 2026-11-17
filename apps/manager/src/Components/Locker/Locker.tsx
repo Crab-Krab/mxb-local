@@ -68,6 +68,7 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@frost/shared/Components/ui/alert-dialog";
+import { GAME_INTEGRATION_SUPPORTED } from "../../lib/localFork";
 
 /**
  * Locker — the app-side bike **model & sound swap** manager, twinned with FrostMod's
@@ -130,6 +131,9 @@ function swapNote(
   if (!outcome.game_running) return t("locker.loadsNextTime");
 
   if (kind === "model") {
+    // MXB Local: no FrostMod, so the outcome is always "not running" or "unreachable", and
+    // those messages name FrostMod. The instruction is the same either way.
+    if (!GAME_INTEGRATION_SUPPORTED) return t("locker.modelRefreshWindowsOnly");
     switch (outcome.model_refresh) {
       case "signaled":
       case "withheld":

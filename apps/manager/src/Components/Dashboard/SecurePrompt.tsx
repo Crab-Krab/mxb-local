@@ -6,6 +6,7 @@ import { useT } from "@/i18n";
 import { useSteamLink } from "@/lib/useSteamLink";
 import type { SectionId } from "../Settings/Settings";
 import { useFrostmod } from "../../Context/FrostmodContext";
+import { GAME_INTEGRATION_SUPPORTED } from "../../lib/localFork";
 
 /** Reasons already told this run. Module-level so a remount doesn't repeat one. */
 const told = new Set<string>();
@@ -31,7 +32,9 @@ export default function SecurePrompt({
   });
 
   useEffect(() => {
-    if (!enabled) return;
+    // MXB Local: protected paints need FrostMod in the game, which this fork doesn't install,
+    // so there is nothing this prompt could ask the player to do.
+    if (!enabled || !GAME_INTEGRATION_SUPPORTED) return;
     let alive = true;
     let off: (() => void) | undefined;
     void onMxbsecureBlocked(({ reason, count }) => {

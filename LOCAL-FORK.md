@@ -29,6 +29,18 @@ a clean Windows PC, and DPAPI recovery has not been exercised on a real profile.
 - Name: **MXB Local**. Settings: `%LOCALAPPDATA%\local.mxb.manager`.
   It does not import or overwrite the original app's settings or cookies.
 
+## Unreleased
+
+- Game Integration (FrostMod) is hidden throughout the app: the consent dialog that could
+  open after setup, the top-bar status, its Settings section, the tour step and the runtime
+  banner. Features that only work with FrostMod running are hidden too: paint sync, instant
+  preset refresh, the protected-paints prompt and the server-browser repair. The code stays
+  in place behind `GAME_INTEGRATION_SUPPORTED` in `apps/manager/src/lib/localFork.ts`.
+- The app no longer asks GitHub for the latest FrostMod release at launch and every 30
+  minutes. local.4 still did; `docs/privacy-local.md` now says so.
+- Folder names that contain "FrostMod" (`FrostMod Models`, `FrostMod Sounds`,
+  `FrostMod ReShade`) are unchanged, because existing installs and upstream use them.
+
 ## Changes in local.4
 
 Work from the November 2026 technical audit.

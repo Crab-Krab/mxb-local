@@ -265,7 +265,7 @@ export const de: Translation = {
   "tour.servers.body": "Teile deine Lackierungen, sieh die der anderen und betreibe deinen eigenen Server.",
   "tour.settings.title": "Einstellungen",
   "tour.settings.body":
-    "Spielordner, Hintergrund und Optionen der Spielintegration.",
+    "Spielordner, Hintergrund und weitere Optionen.",
   "tour.done.title": "Alles bereit",
   "tour.done.body":
     "Geh zu Entdecken und installiere deinen ersten Mod.",

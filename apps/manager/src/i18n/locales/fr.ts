@@ -262,7 +262,7 @@ export const fr: Translation = {
   "tour.servers.body": "Partagez vos peintures, voyez celles des autres et gérez votre propre serveur.",
   "tour.settings.title": "Réglages",
   "tour.settings.body":
-    "Dossier du jeu, arrière-plan et options d'intégration au jeu.",
+    "Dossier du jeu, arrière-plan et autres options.",
   "tour.done.title": "Tout est prêt",
   "tour.done.body":
     "Allez dans Parcourir et installez votre premier mod.",

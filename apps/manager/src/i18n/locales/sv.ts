@@ -247,7 +247,7 @@ export const sv: Translation = {
   "tour.servers.title": "Titta rakt på nätet",
   "tour.servers.body": "Dela dina färger, se allas andra och kör en egen server.",
   "tour.settings.title": "Inställningar",
-  "tour.settings.body": "Spelmapp, bakgrund och alternativ för Spelintegration.",
+  "tour.settings.body": "Spelmapp, bakgrund och andra alternativ.",
   "tour.done.title": "Du är redo.",
   "tour.done.body": "Gå till Bläddra och installera din första mod.",
 

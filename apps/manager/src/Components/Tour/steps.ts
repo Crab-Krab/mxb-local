@@ -16,6 +16,7 @@ import type { LucideIcon } from "lucide-react";
 import type { TKey } from "@/i18n";
 import type { GameCaps } from "@frost/shared/types";
 import type { DashboardView } from "../Shell/nav";
+import { GAME_INTEGRATION_SUPPORTED } from "../../lib/localFork";
 
 export interface Step {
   /** View to switch to before highlighting, so the real screen sits behind the spotlight. */
@@ -126,7 +127,10 @@ export const STEPS: Step[] = [
 ];
 
 /** The steps this game actually has: a step gated on a capability the game lacks is dropped,
- *  because its spotlight would dim the screen and point at nothing. */
+ *  because its spotlight would dim the screen and point at nothing. MXB Local also drops the
+ *  Game Integration step, which points at FrostMod's status in the top bar. */
 export function stepsFor(caps: Partial<GameCaps>, all: Step[] = STEPS): Step[] {
-  return all.filter((s) => !s.cap || !!caps[s.cap]);
+  return all.filter(
+    (s) => (!s.cap || !!caps[s.cap]) && (s.cap !== "frostmod" || GAME_INTEGRATION_SUPPORTED),
+  );
 }
