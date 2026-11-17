@@ -45,7 +45,11 @@ function canonicalToken(t: string): string {
 }
 
 /**
- * Alphanumeric runs of 2+ chars, filler dropped. `"WDR: SX '26"` → `["wdr", "sx", "26"]`.
+ * Alphanumeric runs of 2+ chars, plus single digits, filler dropped.
+ * `"WDR: SX '26"` → `["wdr", "sx", "26"]`.
+ *
+ * A lone digit is kept because it is often the whole difference between two tracks:
+ * `Mammoth Mountain Valley 2` and `… Valley 1` otherwise share every word.
  *
  * The extension goes first: tokenizing `livery.pnt` yields a `pnt` no post title can ever
  * contain, and since it counts toward the union it drags down the score of every paint —
@@ -54,7 +58,7 @@ function canonicalToken(t: string): string {
 function significantTokens(s: string): Set<string> {
   const out = new Set<string>();
   for (const t of s.toLowerCase().replace(EXT, "").split(/[^a-z0-9]+/)) {
-    if (t.length >= 2 && !FILLER.has(t)) out.add(canonicalToken(t));
+    if ((t.length >= 2 || /^[0-9]$/.test(t)) && !FILLER.has(t)) out.add(canonicalToken(t));
   }
   return out;
 }
@@ -127,6 +131,24 @@ export interface InstalledIndex<T = LibraryEntry> {
   match(title: string): T | null;
 }
 
+/**
+ * Whether `short` appears inside `long` without the containing name adding a number to it.
+ * `walnut` is inside `walnut2`, but Walnut 2 is a different track from Walnut, so an
+ * occurrence followed by a digit, or one that starts partway through a number, is not a
+ * match. Both arguments are already normalised (lowercase alphanumerics).
+ */
+function containsWithoutNewNumber(long: string, short: string): boolean {
+  const isDigit = (c: string | undefined) => c !== undefined && c >= "0" && c <= "9";
+  for (let at = long.indexOf(short); at >= 0; at = long.indexOf(short, at + 1)) {
+    const after = long[at + short.length];
+    const before = at > 0 ? long[at - 1] : undefined;
+    if (isDigit(after)) continue;
+    if (isDigit(before) && isDigit(short[0])) continue;
+    return true;
+  }
+  return false;
+}
+
 function jaccard(a: Set<string>, b: Set<string>): { shared: number; score: number } {
   let shared = 0;
   for (const t of a) if (b.has(t)) shared++;
@@ -191,8 +213,8 @@ export function buildInstalledIndex<T extends string | { name: string }>(
       // *filename inside title* is a fragment of the title, which may just be a common
       //   word: a paint called `Replica.pnt` otherwise claimed every "… Replica" post in
       //   the catalog. Needs two distinctive words, or one long enough to be a name.
-      const titleInFile = entry.key.includes(key);
-      const fileInTitle = key.includes(entry.key);
+      const titleInFile = containsWithoutNewNumber(entry.key, key);
+      const fileInTitle = containsWithoutNewNumber(key, entry.key);
       if (titleInFile && key.length >= MIN_CONTAINED_LEN && tokens.size >= 1) return i;
       if (
         fileInTitle &&
