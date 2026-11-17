@@ -2,9 +2,9 @@
 
 An independent fork of [Frostn1/mxb-app](https://github.com/Frostn1/mxb-app), focused on security, privacy and Windows setup fixes.
 
-**[Download for Windows](https://github.com/Crab-Krab/mxb-local/releases/download/v0.20.6-local.4/MXB.Local_0.20.6-local.4_x64-setup.exe)** · [Latest release](https://github.com/Crab-Krab/mxb-local/releases/latest) · [Security review](SECURITY-REVIEW-local.4.md)
+**[Download for Windows](https://github.com/Crab-Krab/mxb-local/releases/download/v0.20.6-local.5/MXB.Local_0.20.6-local.5_x64-setup.exe)** · [Latest release](https://github.com/Crab-Krab/mxb-local/releases/latest) · [Security review](SECURITY-REVIEW-local.5.md)
 
-Windows x64 (Windows 10 or later) · Current version: **0.20.6-local.4**
+Windows x64 (Windows 10 or later) · Current version: **0.20.6-local.5**
 
 ## Changes in this fork
 
@@ -15,6 +15,7 @@ Windows x64 (Windows 10 or later) · Current version: **0.20.6-local.4**
 - Images in mod descriptions load only from the mod sites themselves, so a mod author can't see who viewed their page.
 - Built-in voice chat removed, including microphone capture and WebRTC.
 - Updates from the original publisher, native game-DLL downloads and the runtime installer blocked.
+- Game Integration (FrostMod), the original app's in-game component, is not offered. Features that need it, such as paint sync, are hidden.
 - No separate Microsoft Visual C++ package needed. The app includes the parts it uses.
 - If a saved login can't be decrypted (for example after a Windows password reset), you are signed out of that one service instead of losing your settings.
 - Archives that would unpack to an unreasonable size are refused instead of filling your disk.
@@ -23,7 +24,7 @@ Windows x64 (Windows 10 or later) · Current version: **0.20.6-local.4**
 
 MXB Local uses its own settings folder, separate from the original app. Some private upstream integrations are unavailable, and online features depend on their external services.
 
-The Windows installer is **unsigned**. Each release build carries a GitHub attestation, so you can check an installer came from this repository's build with `gh attestation verify <installer> --repo Crab-Krab/mxb-local`. See the [security review](SECURITY-REVIEW-local.4.md) for the scope of the checks, dependency findings and remaining limitations.
+The Windows installer is **unsigned**. Each release build carries a GitHub attestation, so you can check an installer came from this repository's build with `gh attestation verify <installer> --repo Crab-Krab/mxb-local`. See the [security review](SECURITY-REVIEW-local.5.md) for the scope of the checks, dependency findings and remaining limitations.
 
 ## Getting started
 
@@ -31,7 +32,7 @@ The Windows installer is **unsigned**. Each release build carries a GitHub attes
 
 1. Make sure MX Bikes is installed on your PC.
 2. Download the **Windows installer** using the link above.
-3. Open `MXB.Local_0.20.6-local.4_x64-setup.exe` and follow the installation wizard.
+3. Open `MXB.Local_0.20.6-local.5_x64-setup.exe` and follow the installation wizard.
 4. Launch **MXB Local** and choose **MX Bikes** on the setup screen.
 5. Let the app detect your folders automatically. If prompted, select the requested folders, then start browsing mods.
 
@@ -54,7 +55,7 @@ Choose **Newest** or **Oldest** to browse the full category.
 ## Documentation
 
 - [Fork details and build instructions](LOCAL-FORK.md)
-- [Security review](SECURITY-REVIEW-local.4.md)
+- [Security review](SECURITY-REVIEW-local.5.md)
 - [What the app contacts](docs/privacy-local.md)
 - [Build and test results](https://github.com/Crab-Krab/mxb-local/actions/workflows/build-local-windows.yml)
 - [Original project documentation](README.upstream.md)

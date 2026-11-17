@@ -3,10 +3,10 @@
 This is an independent Windows build of Frostn1/mxb-app v0.20.6. It keeps the
 upstream MIT license and attribution. It is not an official Frost/mxbsecure release.
 
-**Build status: local.4 passed the full Windows build: every Rust and frontend test,
-typecheck, lint, both browser test suites, the Visual C++ runtime import check,
-installer packaging and build attestation. It has not been installed and launched on
-a clean Windows PC, and DPAPI recovery has not been exercised on a real profile.**
+**Build status: local.5 changes passed the full Windows build: every Rust and frontend
+test, typecheck, lint, both browser test suites, the Visual C++ runtime import check and
+installer packaging. It has not been installed and launched on a clean Windows PC, and
+DPAPI recovery has not been exercised on a real profile.**
 
 ## What changes
 
@@ -29,7 +29,7 @@ a clean Windows PC, and DPAPI recovery has not been exercised on a real profile.
 - Name: **MXB Local**. Settings: `%LOCALAPPDATA%\local.mxb.manager`.
   It does not import or overwrite the original app's settings or cookies.
 
-## Unreleased
+## Changes in local.5
 
 - Game Integration (FrostMod) is hidden throughout the app: the consent dialog that could
   open after setup, the top-bar status, its Settings section, the tour step and the runtime
@@ -37,7 +37,7 @@ a clean Windows PC, and DPAPI recovery has not been exercised on a real profile.
   preset refresh, the protected-paints prompt and the server-browser repair. The code stays
   in place behind `GAME_INTEGRATION_SUPPORTED` in `apps/manager/src/lib/localFork.ts`.
 - The app no longer asks GitHub for the latest FrostMod release at launch and every 30
-  minutes. local.4 still did; `docs/privacy-local.md` now says so.
+  minutes. local.4 still did; `docs/privacy-local.md` says so.
 - Folder names that contain "FrostMod" (`FrostMod Models`, `FrostMod Sounds`,
   `FrostMod ReShade`) are unchanged, because existing installs and upstream use them.
 
@@ -93,7 +93,7 @@ Work from the November 2026 technical audit.
   links and oversized pages are rejected. Category metadata and pagination are
   checked, and cached results avoid repeated ranking requests while paging.
 
-See [the local.4 dependency review](SECURITY-REVIEW-local.4.md) for the raw-scan
+See [the local.5 dependency review](SECURITY-REVIEW-local.5.md) for the raw-scan
 interpretation, affected-API analysis and remaining maintenance concerns.
 
 ## Features and limits

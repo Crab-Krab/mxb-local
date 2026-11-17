@@ -1,13 +1,13 @@
 # MXB Local: what the app contacts
 
-Applies to builds after 0.20.6-local.4. In local.3 and earlier, the startup request, the
+Applies to 0.20.6-local.5 and later. In local.3 and earlier, the startup request, the
 server-list upload and the supporters fetch listed under "Never" below still happen.
 
 **Correction for local.4.** local.4 still asks GitHub (`api.github.com`) for the latest
 FrostMod release from the upstream developer's repositories, at launch and every 30 minutes.
 GitHub sees your IP address and that the request came from `mxb-local`. Nothing else is sent,
-and nothing is downloaded. An earlier version of this note missed it. Builds after local.4 do
-not make this request.
+and nothing is downloaded. An earlier version of this note missed it. local.5 and later do not
+make this request.
 
 This note is specific to MXB Local. [`privacy.md`](privacy.md) is the upstream document for
 MXB App, MXB Studio, MXB Coach and FrostMod, and describes data collection that this fork has
