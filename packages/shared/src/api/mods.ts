@@ -184,9 +184,8 @@ export const MOD_TYPES: ModType[] = [
     installSubpath: "mods/tracks",
     categories: [
       { id: 22, label: "browseCat.all" },
-      { id: 300, label: "browseCat.beginner" },
-      { id: 301, label: "browseCat.intermediate" },
-      { id: 302, label: "browseCat.pro" },
+      // mxb-mods removed its Beginner (300), Intermediate (301) and Pro (302) track
+      // categories in November 2026; the REST API answers "Term does not exist" for all three.
       { id: 119, label: "browseCat.assets" },
     ],
   },
