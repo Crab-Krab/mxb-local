@@ -42,6 +42,9 @@ and the secure-boundary check. On Windows,
 every step for these changes. The release build is the run on `main` after merge, linked
 from the release notes.
 
+Checked by hand on Windows, with the installer from that run: star ratings on popular mods,
+the three difficulty filters, mod installs and numbered-track matching.
+
 Not verified: installing and launching on a clean Windows PC, and DPAPI recovery on a real
 profile.
 

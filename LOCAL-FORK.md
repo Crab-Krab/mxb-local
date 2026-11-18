@@ -5,8 +5,9 @@ upstream MIT license and attribution. It is not an official Frost/mxbsecure rele
 
 **Build status: 1.0.0 changes passed the full Windows build: every Rust and frontend
 test, typecheck, lint, both browser test suites, the Visual C++ runtime import check and
-installer packaging. It has not been installed and launched on a clean Windows PC, and
-DPAPI recovery has not been exercised on a real profile.**
+installer packaging, and were checked by hand on Windows (ratings, difficulty filters,
+installs, numbered-track matching). It has not been installed and launched on a clean
+Windows PC, and DPAPI recovery has not been exercised on a real profile.**
 
 ## What changes
 
