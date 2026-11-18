@@ -90,7 +90,45 @@ fn report(app: &AppHandle, slug: &str, progress: Slot<'_>, received: u64, total:
     }
 }
 
+/// The shortest gap between two mid-download progress events for one install.
+///
+/// The byte throttle ([`EMIT_EVERY_BYTES`]) alone still meant around a hundred events a second
+/// on a fast connection, each one redrawing the download list. Ten a second is smoother than
+/// the eye can tell apart.
+const EMIT_MIN_GAP: Duration = Duration::from_millis(100);
+
+/// Whether a mid-download update for `slug` should go out now. The first update and the final
+/// one (received equals total) always go, so a bar never stalls short of full.
+fn progress_due(slug: &str, stage: &str, received: Option<u64>, total: Option<u64>) -> bool {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::time::Instant;
+    static LAST: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+
+    if stage != "downloading" || (received.is_some() && received == total) {
+        if let Ok(mut last) = LAST.lock() {
+            if let Some(map) = last.as_mut() {
+                map.remove(slug);
+            }
+        }
+        return true;
+    }
+    let Ok(mut last) = LAST.lock() else { return true };
+    let map = last.get_or_insert_with(HashMap::new);
+    let now = Instant::now();
+    match map.get(slug) {
+        Some(at) if now.duration_since(*at) < EMIT_MIN_GAP => false,
+        _ => {
+            map.insert(slug.to_string(), now);
+            true
+        }
+    }
+}
+
 fn emit(app: &AppHandle, slug: &str, stage: &'static str, received: Option<u64>, total: Option<u64>) {
+    if !progress_due(slug, stage, received, total) {
+        return;
+    }
     let _ = app.emit(
         "install-progress",
         Progress {
@@ -4140,6 +4178,18 @@ mod tests {
     fn touch(p: &Path) {
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, b"x").unwrap();
+    }
+
+    #[test]
+    fn progress_is_throttled_but_never_stalls_short_of_full() {
+        let slug = "throttle-test";
+        assert!(progress_due(slug, "downloading", Some(1), Some(100)), "the first update goes");
+        assert!(!progress_due(slug, "downloading", Some(2), Some(100)), "the next is held back");
+        assert!(progress_due(slug, "downloading", Some(100), Some(100)), "full always goes");
+        assert!(progress_due(slug, "extracting", None, None), "a new stage always goes");
+        std::thread::sleep(EMIT_MIN_GAP);
+        assert!(progress_due(slug, "downloading", Some(3), Some(100)));
+        assert!(progress_due("other-install", "downloading", Some(1), Some(100)), "per install");
     }
 
     /// Where every file of `staged` would land, relative to `mods`.

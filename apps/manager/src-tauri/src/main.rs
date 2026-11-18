@@ -524,10 +524,17 @@ async fn shop_catalog_refresh(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Async and on the blocking pool, like `scan_bike_targets` beside it. A plain `fn` command
+/// runs on the main thread, and this walks a whole mods folder at the start of every install
+/// and when a mod page opens, so a large `mods/bikes` froze the window while it ran.
 #[tauri::command]
-fn get_installed_mods(app: tauri::AppHandle, subpath: String) -> Result<Vec<InstalledMod>, String> {
-    let cfg = config::load(&app).map_err(|e| format!("{e:#}"))?;
-    library::scan_mods(&cfg.mods_path, &subpath).map_err(|e| format!("{e:#}"))
+async fn get_installed_mods(app: tauri::AppHandle, subpath: String) -> Result<Vec<InstalledMod>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cfg = config::load(&app).map_err(|e| format!("{e:#}"))?;
+        library::scan_mods(&cfg.mods_path, &subpath).map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| format!("get_installed_mods task failed: {e}"))?
 }
 
 /// Rate-limit for the Library-scan trigger. Switching tabs fires a scan each time, and
