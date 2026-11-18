@@ -64,6 +64,11 @@ pub async fn ensure_account(cfg: &AppConfig) -> Result<(String, bool), String> {
 /// here once. Voice and paint sync share one account — they are the same rider on the same
 /// server, and a second identity would put their name on the grid twice.
 pub async fn account(app: &tauri::AppHandle, cfg: &AppConfig) -> Result<String, String> {
+    // MXB Local creates no upstream account, here or anywhere: every feature that needs one
+    // asks for it through this function.
+    if !crate::local_security::ALLOW_UPSTREAM_ACCOUNT {
+        return Err("Upstream accounts are not available in MXB Local".into());
+    }
     let (token, is_new) = ensure_account(cfg).await?;
     if is_new {
         // Re-read before writing: `save` rewrites the whole file and this ran across an

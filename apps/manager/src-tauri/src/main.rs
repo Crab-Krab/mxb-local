@@ -214,6 +214,33 @@ fn ipc_allowed(label: &str, command: &str) -> bool {
     }
 }
 
+/// Drops an upstream account an earlier version saved, with what it was set up with. MXB
+/// Local keeps none (`local_security::ALLOW_UPSTREAM_ACCOUNT`). Only the copy on this PC goes:
+/// nothing is sent to the upstream service to close the account.
+fn forget_upstream_account(app: &tauri::AppHandle) {
+    let Ok(mut cfg) = config::load(app) else { return };
+    if !clear_upstream_account(&mut cfg) {
+        return;
+    }
+    match config::save(app, &cfg) {
+        Ok(()) => log::info!("[account] removed the saved upstream account"),
+        Err(e) => log::warn!("[account] couldn't remove the saved upstream account: {e:#}"),
+    }
+}
+
+/// Clears the upstream account fields. True when there was anything to clear.
+fn clear_upstream_account(cfg: &mut AppConfig) -> bool {
+    let had = !cfg.cp_token.is_empty()
+        || !cfg.cp_rider_name.is_empty()
+        || !cfg.cp_guid.is_empty()
+        || cfg.friends_presence;
+    cfg.cp_token.clear();
+    cfg.cp_rider_name.clear();
+    cfg.cp_guid.clear();
+    cfg.friends_presence = false;
+    had
+}
+
 /// Whether first-run setup is actually complete.
 ///
 /// This deliberately does not mean merely "a config can be loaded": folder detection and
@@ -228,6 +255,27 @@ fn setup_ready(cfg: Option<&AppConfig>) -> bool {
 fn is_configured(app: tauri::AppHandle) -> bool {
     let cfg = config::load_or_detect(&app);
     setup_ready(cfg.as_ref())
+}
+
+#[cfg(test)]
+mod upstream_account_tests {
+    use super::{clear_upstream_account, AppConfig};
+
+    #[test]
+    fn a_saved_upstream_account_is_cleared_once() {
+        let mut cfg = AppConfig::default();
+        cfg.cp_token = "token".into();
+        cfg.cp_rider_name = "Rider".into();
+        cfg.cp_guid = "FF0000000000000000".into();
+        cfg.friends_presence = true;
+        cfg.mods_path = "C:/mods".into();
+        assert!(clear_upstream_account(&mut cfg));
+        assert!(cfg.cp_token.is_empty() && cfg.cp_rider_name.is_empty() && cfg.cp_guid.is_empty());
+        assert!(!cfg.friends_presence);
+        // Nothing else in the settings changes, and a second pass has nothing to save.
+        assert_eq!(cfg.mods_path, "C:/mods");
+        assert!(!clear_upstream_account(&mut cfg));
+    }
 }
 
 #[cfg(test)]
@@ -8897,7 +8945,16 @@ fn main() {
             #[cfg(mxbsecure)]
             register_secure_key_check();
             // Tells accepted friends which server the rider is on, unless they switched it off.
-            friends::start(handle);
+            // Part of Online, which MXB Local leaves out.
+            if local_security::ALLOW_ONLINE {
+                friends::start(handle);
+            }
+            // MXB Local keeps no upstream account. One an earlier version created (Friends,
+            // the queue and paint sync made one by themselves) is dropped here, so nothing
+            // that reads the saved token can use it again.
+            if !local_security::ALLOW_UPSTREAM_ACCOUNT {
+                forget_upstream_account(handle);
+            }
             shop_session::load_session(handle);
             hub_session::load_session(handle);
             shop_catalog_session::load(handle);
@@ -8930,7 +8987,10 @@ fn main() {
             // Keep the server list warm from here on. The tab used to be the only thing that
             // ever read the master, which made every visit wait for a sweep and made an install
             // that never opened the tab invisible to the shared book and to the outage count.
-            serverwatch::start(handle);
+            // Part of Online, which MXB Local leaves out.
+            if local_security::ALLOW_ONLINE {
+                serverwatch::start(handle);
+            }
             // Only registers the result listener and stashes the handle — the hidden window
             // isn't built until something is actually refused.
             mxb_fetch::init(handle);
@@ -9333,6 +9393,13 @@ fn main() {
                 if !ipc_allowed(&label, &command) {
                     log::warn!("refused IPC '{command}' from the '{label}' window");
                     invoke.resolver.reject("not permitted from this window");
+                    return true;
+                }
+                // Features MXB Local leaves out (Online, upstream accounts, share codes):
+                // refused here as well as hidden, so nothing reaches their handlers.
+                if let Some(why) = local_security::refused_command(&command) {
+                    log::info!("refused '{command}': {why}");
+                    invoke.resolver.reject(why);
                     return true;
                 }
                 handler(invoke)
