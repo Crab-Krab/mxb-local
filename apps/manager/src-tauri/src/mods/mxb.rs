@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 const PER_PAGE: &str = "24";
 
+mod difficulty_page;
 mod popular_page;
 
 /// The mods catalog for whichever game is active.
@@ -521,6 +522,14 @@ pub async fn search(
     sort: ModSort,
 ) -> anyhow::Result<Vec<ModSummary>> {
     let q = query.trim();
+    // Beginner, Intermediate and Pro come from the site's difficulty pages, which list
+    // newest first and take no search term. A search under one of them searches all tracks;
+    // the UI drops those filters while the box has text in it, and this is the backstop.
+    let category_id = match difficulty_page::level(category_id) {
+        Some(level) if q.is_empty() => return difficulty_page::search(level, page).await,
+        Some(_) => 22,
+        None => category_id,
+    };
     // The popular listings come from a plugin endpoint that has no search of its own, so
     // a typed query always means the plain catalog. The UI hides those options while the
     // box has text in it; this is the backstop.

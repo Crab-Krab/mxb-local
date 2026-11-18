@@ -524,10 +524,17 @@ async fn shop_catalog_refresh(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Async and on the blocking pool, like `scan_bike_targets` beside it. A plain `fn` command
+/// runs on the main thread, and this walks a whole mods folder at the start of every install
+/// and when a mod page opens, so a large `mods/bikes` froze the window while it ran.
 #[tauri::command]
-fn get_installed_mods(app: tauri::AppHandle, subpath: String) -> Result<Vec<InstalledMod>, String> {
-    let cfg = config::load(&app).map_err(|e| format!("{e:#}"))?;
-    library::scan_mods(&cfg.mods_path, &subpath).map_err(|e| format!("{e:#}"))
+async fn get_installed_mods(app: tauri::AppHandle, subpath: String) -> Result<Vec<InstalledMod>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cfg = config::load(&app).map_err(|e| format!("{e:#}"))?;
+        library::scan_mods(&cfg.mods_path, &subpath).map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| format!("get_installed_mods task failed: {e}"))?
 }
 
 /// Rate-limit for the Library-scan trigger. Switching tabs fires a scan each time, and
@@ -5667,7 +5674,7 @@ async fn shop_track_from_server_name(
             continue;
         };
         if let Some(hit) = page.items.into_iter().find(|item| {
-            sells_tracks(&item.category_names) && title_in_server_name(&compact, &item.title)
+            sells_tracks(&item.category_names) && title_in_server_name(server_name, &item.title)
         }) {
             return Some(hit);
         }
@@ -5683,9 +5690,17 @@ fn compact_track_name(value: &str) -> String {
         .collect()
 }
 
-fn title_in_server_name(compact_server_name: &str, product_title: &str) -> bool {
+/// Whether a server name contains a product title in one of its `|`-separated parts.
+///
+/// Number-aware: a server on "Walnut 2" names neither the "Walnut" product nor "Walnut 1".
+/// Checked part by part because compacting the whole name runs neighbouring parts together:
+/// `Walnut 2 | 24/7` would read as `walnut2247`.
+fn title_in_server_name(server_name: &str, product_title: &str) -> bool {
     let compact_title = compact_track_name(product_title);
-    !compact_title.is_empty() && compact_server_name.contains(&compact_title)
+    !compact_title.is_empty()
+        && server_name
+            .split('|')
+            .any(|part| contains_whole_numbers(&compact_track_name(part), &compact_title))
 }
 
 /// Find an exact Shop title expressed by a server's internal folder id.
@@ -5740,12 +5755,16 @@ fn shop_title_matches_server_id(canonical_id: &str, title: &str) -> bool {
             && !splits_a_number(&canonical_title, 0, canonical_id.len()))
 }
 
-/// Whether `needle` occurs in `hay` somewhere that doesn't cut a number in two.
+/// Whether `needle` occurs in `hay` somewhere that doesn't cut a number in two, and isn't
+/// followed by a number of its own. `walnut2` contains `walnut`, but a server on Walnut 2 is
+/// not running the Walnut product.
 fn contains_whole_numbers(hay: &str, needle: &str) -> bool {
     !needle.is_empty()
-        && hay
-            .match_indices(needle)
-            .any(|(at, _)| !splits_a_number(hay, at, at + needle.len()))
+        && hay.match_indices(needle).any(|(at, _)| {
+            let end = at + needle.len();
+            let number_follows = hay[end..].chars().next().is_some_and(|c| c.is_ascii_digit());
+            !splits_a_number(hay, at, end) && !number_follows
+        })
 }
 
 /// Whether `hay[start..end]` begins or ends in the middle of a run of digits.
@@ -5949,16 +5968,15 @@ fn sells_tracks(categories: &[String]) -> bool {
 #[cfg(test)]
 mod server_title_art_tests {
     use super::{
-        canonical_server_track_name, compact_track_name, shop_queries_for_server_id,
-        shop_title_matches_server_id, title_in_server_name,
+        canonical_server_track_name, shop_queries_for_server_id, shop_title_matches_server_id,
+        title_in_server_name,
     };
 
     #[test]
     fn finds_a_complete_shop_title_inside_a_decorated_server_name() {
-        let server_name =
-            compact_track_name("12 | OPEN OEM | 2026 ARL MX PRO Rotation 1 | CBRSERVERS.COM");
-        assert!(title_in_server_name(&server_name, "2026 ARL MX PRO"));
-        assert!(!title_in_server_name(&server_name, "2026 ARL MX PRO X"));
+        let server_name = "12 | OPEN OEM | 2026 ARL MX PRO Rotation 1 | CBRSERVERS.COM";
+        assert!(title_in_server_name(server_name, "2026 ARL MX PRO"));
+        assert!(!title_in_server_name(server_name, "2026 ARL MX PRO X"));
     }
 
     #[test]
@@ -6048,6 +6066,22 @@ mod server_title_art_tests {
         let rd17 = canonical_server_track_name("2026_ARLMX_RD17_FAKEVILLE_Pro");
         assert!(!shop_title_matches_server_id(&rd17, "2026 ARLMX RD1"));
         assert!(shop_title_matches_server_id(&rd17, "2026 ARLMX RD17 - FAKEVILLE"));
+    }
+
+    /// A number after the name makes it a different track: a server on Walnut 2 is not
+    /// running the Walnut product, and the reverse.
+    #[test]
+    fn a_numbered_sequel_is_not_its_predecessor() {
+        let server = "[EU] Bob's Practice | Walnut 2 | 24/7";
+        assert!(!title_in_server_name(server, "Walnut"));
+        assert!(!title_in_server_name(server, "Walnut 1"));
+        assert!(title_in_server_name(server, "Walnut 2"));
+        let walnut2 = canonical_server_track_name("Walnut_2");
+        assert!(!shop_title_matches_server_id(&walnut2, "Walnut"));
+        assert!(shop_title_matches_server_id(&walnut2, "Walnut 2"));
+        let walnut = canonical_server_track_name("Walnut");
+        assert!(!shop_title_matches_server_id(&walnut, "Walnut 2"));
+        assert!(shop_title_matches_server_id(&walnut, "Walnut"));
     }
 }
 

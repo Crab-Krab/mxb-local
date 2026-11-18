@@ -151,10 +151,16 @@ export default function Mods({
   // One order control for three vocabularies: only the orders at least one live source can
   // honour are offered, and a pick that stops being offered — "Oldest" is mxb-mods' alone —
   // falls back rather than silently ordering by something else.
+  // mxb-mods' own limits come from the listing: no popular order during a search, and only
+  // Newest under a track difficulty filter.
+  const listingOffers = (s: ModsSort) =>
+    listing.sortOptions.some((o) => o.value === toModSort(s));
   const sortOptions = MODS_SORTS.filter((s) =>
     source === "all"
-      ? s.sources.some((src) => (src === "mods" ? modsOn : src === "hub" ? hubOn : shopOn))
-      : s.sources.includes(source),
+      ? s.sources.some((src) =>
+          src === "mods" ? modsOn && listingOffers(s.value) : src === "hub" ? hubOn : shopOn,
+        )
+      : s.sources.includes(source) && (source !== "mods" || listingOffers(s.value)),
   );
   const activeSort = sortOptions.some((s) => s.value === sort) ? sort : "newest";
 
@@ -209,7 +215,7 @@ export default function Mods({
 
   const categories = useMemo<TypeListCategory[]>(() => {
     if (!active) {
-      return modType.categories.map((c) => ({ id: c.id, label: t(c.label) }));
+      return listing.categoryOptions.map((c) => ({ id: c.id, label: t(c.label) }));
     }
     const { root, roots } = active;
     if (!root) return [];
@@ -224,7 +230,7 @@ export default function Mods({
       { id: root.id, label: t("shopCatalog.allCategories") },
       ...children.map((c) => ({ id: c.id, label: c.name })),
     ];
-  }, [active, modType, t]);
+  }, [active, listing.categoryOptions, t]);
 
   const activeCategoryId = active
     ? (storeCategoryId ?? (active.roots.length > 1 ? GROUPED_CATEGORY_ID : active.root?.id) ?? null)

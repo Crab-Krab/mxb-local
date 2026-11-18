@@ -90,7 +90,45 @@ fn report(app: &AppHandle, slug: &str, progress: Slot<'_>, received: u64, total:
     }
 }
 
+/// The shortest gap between two mid-download progress events for one install.
+///
+/// The byte throttle ([`EMIT_EVERY_BYTES`]) alone still meant around a hundred events a second
+/// on a fast connection, each one redrawing the download list. Ten a second is smoother than
+/// the eye can tell apart.
+const EMIT_MIN_GAP: Duration = Duration::from_millis(100);
+
+/// Whether a mid-download update for `slug` should go out now. The first update and the final
+/// one (received equals total) always go, so a bar never stalls short of full.
+fn progress_due(slug: &str, stage: &str, received: Option<u64>, total: Option<u64>) -> bool {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::time::Instant;
+    static LAST: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+
+    if stage != "downloading" || (received.is_some() && received == total) {
+        if let Ok(mut last) = LAST.lock() {
+            if let Some(map) = last.as_mut() {
+                map.remove(slug);
+            }
+        }
+        return true;
+    }
+    let Ok(mut last) = LAST.lock() else { return true };
+    let map = last.get_or_insert_with(HashMap::new);
+    let now = Instant::now();
+    match map.get(slug) {
+        Some(at) if now.duration_since(*at) < EMIT_MIN_GAP => false,
+        _ => {
+            map.insert(slug.to_string(), now);
+            true
+        }
+    }
+}
+
 fn emit(app: &AppHandle, slug: &str, stage: &'static str, received: Option<u64>, total: Option<u64>) {
+    if !progress_due(slug, stage, received, total) {
+        return;
+    }
     let _ = app.emit(
         "install-progress",
         Progress {
@@ -2352,12 +2390,22 @@ pub(crate) fn plan_placement(
     let route = |rule, placement| Route { rule, placement };
 
     // Check the extracted root FIRST so a `<Bike>/paints/` bundle isn't unwrapped to bare `paints/`.
-    let unwrapped = unwrap_wrapper(extracted);
+    let mut levels = vec![extracted.to_path_buf()];
+    while let Some(next) = unwrap_one(levels.last().expect("starts non-empty")) {
+        levels.push(next);
+    }
+    let unwrapped = levels.last().expect("starts non-empty").clone();
     let candidates: Vec<&Path> = if unwrapped == extracted {
         vec![extracted]
     } else {
         vec![extracted, unwrapped.as_path()]
     };
+    // A folder that names where its contents go (`mods`, `tyres`, `tracks`, …) is looked for
+    // at every level unwrapping passes through, not just the first and last: `Pack/tyres/x.pkz`
+    // unwraps all the way to the bare `.pkz`, and the `tyres` folder is only visible one level
+    // up. Only those names: the paint and sound rules below read shapes (`<X>/paints/`) that
+    // an intermediate level of a gear tree also has, so they keep to the two ends.
+    let every_level: Vec<&Path> = levels.iter().map(PathBuf::as_path).collect();
 
     // MX Bikes kits use `[mods/]rider/<profile>/paints` inside their package. That is the
     // standard package layout, not the final on-disk path: the game reads the selected
@@ -2406,7 +2454,7 @@ pub(crate) fn plan_placement(
         }
     }
 
-    for base in &candidates {
+    for base in &every_level {
         if let Some(m) = child_dir(base, "mods") {
             return route(
                 RouteRule::ModsTree,
@@ -2418,7 +2466,7 @@ pub(crate) fn plan_placement(
         }
     }
 
-    for base in &candidates {
+    for base in &every_level {
         let cats: Vec<PathBuf> = CATEGORY_DIRS
             .iter()
             .filter_map(|c| child_dir(base, c))
@@ -2521,12 +2569,24 @@ pub(crate) fn plan_placement(
     }
     // Extracted tracks need their own folder; loose bike paints don't.
     let wrap_loose = type_folder.eq_ignore_ascii_case("tracks");
+    // Loose files that came out of unwrapping a folder keep that folder's name: for a track
+    // the folder name is its identity (servers name the track by it), and the slug is only
+    // what the download was called.
+    let wrap_name = if wrap_loose && unwrapped.as_path() != extracted {
+        unwrapped
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| slug.to_string())
+    } else {
+        slug.to_string()
+    };
     route(
         RouteRule::Typed,
         Placement::Plain {
             src: unwrapped,
             dst: type_dir,
-            slug: slug.to_string(),
+            slug: wrap_name,
             wrap_loose,
         },
     )
@@ -2964,7 +3024,7 @@ pub(crate) fn unwrap_wrapper(dir: &Path) -> PathBuf {
 }
 
 /// One step of [`unwrap_wrapper`]: the only folder inside `dir`, when it holds nothing else
-/// but junk files.
+/// but junk files or the preview and instructions an author put beside it.
 pub(crate) fn unwrap_one(dir: &Path) -> Option<PathBuf> {
     let entries: Vec<_> = std::fs::read_dir(dir).ok()?.filter_map(|e| e.ok()).collect();
     let dirs: Vec<_> = entries
@@ -2974,8 +3034,25 @@ pub(crate) fn unwrap_one(dir: &Path) -> Option<PathBuf> {
     let only_junk_files = entries
         .iter()
         .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
-        .all(|f| is_junk(&f.file_name().to_string_lossy()));
+        .all(|f| is_wrapper_extra(&f.file_name().to_string_lossy()));
     (dirs.len() == 1 && only_junk_files).then(|| dirs[0].path())
+}
+
+/// A file that can sit beside a mod's folder without making the folder around both more than
+/// a wrapper: anything [`is_junk`], plus the preview pictures and install guides authors add
+/// (`preview.jpg`, `Install.pdf`). Only for deciding what is a wrapper. Inside a mod an image
+/// can be real content, so [`is_junk`] alone still decides what gets copied.
+///
+/// Without this, `Pack/{Pack/mods/…, preview.jpg}` was never unwrapped, its `mods` tree went
+/// unrecognised, and the whole pack landed at `mods/<type>/Pack/mods/…`, where nothing loads.
+fn is_wrapper_extra(name: &str) -> bool {
+    const EXTRAS: [&str; 10] =
+        ["jpg", "jpeg", "png", "gif", "bmp", "webp", "pdf", "doc", "docx", "rtf"];
+    is_junk(name)
+        || Path::new(name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| EXTRAS.iter().any(|x| e.eq_ignore_ascii_case(x)))
 }
 
 pub(crate) fn child_dir(parent: &Path, name: &str) -> Option<PathBuf> {
@@ -4101,6 +4178,91 @@ mod tests {
     fn touch(p: &Path) {
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, b"x").unwrap();
+    }
+
+    #[test]
+    fn progress_is_throttled_but_never_stalls_short_of_full() {
+        let slug = "throttle-test";
+        assert!(progress_due(slug, "downloading", Some(1), Some(100)), "the first update goes");
+        assert!(!progress_due(slug, "downloading", Some(2), Some(100)), "the next is held back");
+        assert!(progress_due(slug, "downloading", Some(100), Some(100)), "full always goes");
+        assert!(progress_due(slug, "extracting", None, None), "a new stage always goes");
+        std::thread::sleep(EMIT_MIN_GAP);
+        assert!(progress_due(slug, "downloading", Some(3), Some(100)));
+        assert!(progress_due("other-install", "downloading", Some(1), Some(100)), "per install");
+    }
+
+    /// Where every file of `staged` would land, relative to `mods`.
+    fn landing(staged: &Path, mods: &Path, type_folder: &str, dest: &str) -> Vec<String> {
+        let route = plan_placement(staged, mods, type_folder, dest, "slug");
+        let mut out: Vec<String> = writes_for(&route.placement)
+            .into_iter()
+            .map(|(_, to)| to.strip_prefix(mods).unwrap().to_string_lossy().replace('\\', "/"))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// A preview image or install guide beside a wrapper folder doesn't stop it being seen as
+    /// a wrapper, so a `mods` tree, a tyre set or a track inside one goes where the game loads
+    /// it, and the preview isn't left loose in the mods folder.
+    #[test]
+    fn a_preview_beside_a_wrapper_does_not_misplace_the_mod() {
+        let d = place_tmp("wrapped-preview");
+        let mods = d.join("mods");
+
+        let s = d.join("mods-tree");
+        touch(&s.join("Pack/mods/tracks/Track.pkz"));
+        touch(&s.join("preview.jpg"));
+        assert_eq!(landing(&s, &mods, "tracks", ""), ["tracks/Track.pkz"]);
+
+        let s = d.join("tyres");
+        touch(&s.join("MX Tyres/tyres/oem_mx.pkz"));
+        touch(&s.join("Preview.png"));
+        assert_eq!(landing(&s, &mods, "bikes", ""), ["tyres/oem_mx.pkz"]);
+
+        let s = d.join("twice");
+        touch(&s.join("Outer/Inner/Track.pkz"));
+        touch(&s.join("Outer/thumb.jpg"));
+        assert_eq!(landing(&s, &mods, "tracks", ""), ["tracks/Track.pkz"]);
+
+        let s = d.join("track-folder");
+        touch(&s.join("Track v2/Track/track.map"));
+        touch(&s.join("Track v2/Track/track.rdf"));
+        touch(&s.join("Track v2/cover.jpg"));
+        touch(&s.join("Install.pdf"));
+        assert_eq!(
+            landing(&s, &mods, "tracks", ""),
+            ["tracks/Track/track.map", "tracks/Track/track.rdf"]
+        );
+
+        let s = d.join("sound");
+        touch(&s.join("Sound/KTM SX-F 450/engine.scl"));
+        touch(&s.join("Sound/KTM SX-F 450/sfx.cfg"));
+        touch(&s.join("Sound/screenshot.jpg"));
+        assert_eq!(
+            landing(&s, &mods, "bikes", "KTM SX-F 450"),
+            ["bikes/KTM SX-F 450/engine.scl", "bikes/KTM SX-F 450/sfx.cfg"]
+        );
+
+        // No preview at all: a zip holding just `tyres/…` used to unwrap past the `tyres`
+        // folder and land the set in `mods/bikes`.
+        let s = d.join("bare-tyres");
+        touch(&s.join("tyres/oem_mx.pkz"));
+        assert_eq!(landing(&s, &mods, "bikes", ""), ["tyres/oem_mx.pkz"]);
+
+        // A zip holding just a track folder keeps the track's own folder name.
+        let s = d.join("bare-track");
+        touch(&s.join("Hangtown/hangtown.map"));
+        assert_eq!(landing(&s, &mods, "tracks", ""), ["tracks/Hangtown/hangtown.map"]);
+
+        // A folder beside real files is still not a wrapper: a texture next to the folder
+        // isn't a preview.
+        let s = d.join("not-a-wrapper");
+        touch(&s.join("Track/track.map"));
+        touch(&s.join("ground.tga"));
+        assert!(landing(&s, &mods, "tracks", "").iter().any(|p| p.ends_with("ground.tga")));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

@@ -158,7 +158,8 @@ pub fn norm_name(name: &str) -> String {
 
 /// Whether an archive name and an installed mod name plausibly name the same thing: equal
 /// once normalised, or one wholly inside the other when that one is long enough to mean
-/// something (`RedBud_2024_v2.zip` ↔ `RedBud_2024.pkz`).
+/// something (`RedBud_2024_v2.zip` ↔ `RedBud_2024.pkz`). Containment that adds a number
+/// doesn't count: `Walnut_2.zip` is not a leftover of an installed `Walnut.pkz`.
 pub fn names_match(archive: &str, installed: &str) -> bool {
     let a = norm_name(archive);
     let b = norm_name(installed);
@@ -169,7 +170,19 @@ pub fn names_match(archive: &str, installed: &str) -> bool {
         return true;
     }
     let (short, long) = if a.len() <= b.len() { (&a, &b) } else { (&b, &a) };
-    short.len() >= MIN_NAME_LEN && long.contains(short.as_str())
+    short.len() >= MIN_NAME_LEN && contains_without_new_number(long, short)
+}
+
+/// Whether `short` occurs in `long` without the occurrence being followed by a digit or
+/// starting partway through a number. Both are normalised ASCII alphanumerics.
+fn contains_without_new_number(long: &str, short: &str) -> bool {
+    let bytes = long.as_bytes();
+    let starts_with_digit = short.as_bytes().first().is_some_and(u8::is_ascii_digit);
+    long.match_indices(short).any(|(at, _)| {
+        let after = bytes.get(at + short.len()).is_some_and(u8::is_ascii_digit);
+        let before = at > 0 && bytes[at - 1].is_ascii_digit();
+        !after && !(before && starts_with_digit)
+    })
 }
 
 // ── hashing ──────────────────────────────────────────────────────────────────────────────
@@ -979,6 +992,16 @@ mod tests {
         assert!(!names_match("mx.zip", "mxbikes_pack.pkz"));
         assert!(!names_match("Washougal.zip", "RedBud.pkz"));
         assert!(!names_match(".zip", "a.pkz"));
+    }
+
+    #[test]
+    fn a_numbered_sequel_is_not_a_leftover_of_its_predecessor() {
+        assert!(!names_match("Walnut_2.zip", "Walnut.pkz"));
+        assert!(!names_match("Walnut.zip", "Walnut_2.pkz"));
+        assert!(!names_match("Walnut_2.zip", "Walnut_1.pkz"));
+        assert!(names_match("Walnut_2.zip", "Walnut2.pkz"));
+        // A version suffix that isn't a bare number still matches.
+        assert!(names_match("RedBud_2024_v2.zip", "RedBud_2024.pkz"));
     }
 
     #[test]

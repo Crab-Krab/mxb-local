@@ -240,6 +240,15 @@ pub fn heightfield_entries(names: &[String]) -> Vec<String> {
     out
 }
 
+/// A count written either way track tools write it: `512` or `512.0`. A value with a real
+/// fraction (`512.5`), a negative one or one out of range is not a count.
+fn whole_number(value: &str) -> Option<u32> {
+    value.parse().ok().or_else(|| {
+        let v: f64 = value.parse().ok()?;
+        (v.is_finite() && v.fract() == 0.0 && (0.0..=u32::MAX as f64).contains(&v)).then_some(v as u32)
+    })
+}
+
 /// Grid dimensions and sample spacing named in the track's `.ini`, when it names them.
 ///
 /// Nothing here is required — it's a hint handed to the probe, which still has to satisfy
@@ -261,8 +270,8 @@ fn ini_hints(text: &str) -> (Option<(u32, u32)>, Option<f32>) {
         let value = value.trim();
         match key.as_str() {
             // The grid, in samples.
-            "samples_x" | "nx" | "width" => samples.0 = value.parse().ok(),
-            "samples_y" | "ny" | "height" => samples.1 = value.parse().ok(),
+            "samples_x" | "nx" | "width" => samples.0 = whole_number(value),
+            "samples_y" | "ny" | "height" => samples.1 = whole_number(value),
             // The ground it covers, in metres. Deliberately not treated as a sample count:
             // `size_x` is the track's width in metres, and reading it as a grid width is
             // how a 480 m track becomes a 480-sample one.
@@ -1464,6 +1473,16 @@ mod tests {
         // a viewer that used it as one would draw the ground at a fraction of its size.
         let (_, spacing) = ini_hints("samples_x = 2049\nsamples_y = 2049\nscale = 3.2\n");
         assert_eq!(spacing, None);
+    }
+
+    #[test]
+    fn ini_hints_read_counts_written_as_decimals() {
+        let (dims, spacing) = ini_hints("samples_x = 1025.0\nsamples_y = 1025.000\nsize_x = 512\n");
+        assert_eq!(dims, Some((1025, 1025)));
+        assert_eq!(spacing, Some(0.5));
+        // A real fraction is not a count.
+        let (dims, _) = ini_hints("samples_x = 1025.5\nsamples_y = 1025\n");
+        assert_eq!(dims, None);
     }
 
     #[test]

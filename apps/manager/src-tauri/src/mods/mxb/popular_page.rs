@@ -29,25 +29,32 @@ fn ranked_slugs(body: &str, base: &str) -> anyhow::Result<Vec<String>> {
     let origin = reqwest::Url::parse(base)?;
     let mut slugs = Vec::new();
     for item in doc.select(&rows).take(MAX_RANKED) {
-        let Some(href) = item.value().attr("href") else { continue };
-        let Ok(url) = origin.join(href) else { continue };
-        if url.scheme() != "https" || url.origin() != origin.origin()
-            || !url.username().is_empty() || url.password().is_some()
-            || url.query().is_some() || url.fragment().is_some() {
-            continue;
-        }
-        let slug = url.path().trim_matches('/');
-        if slug.is_empty() || slug.len() > 240
-            || !slug.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'%')) {
-            continue;
-        }
-        if !slugs.iter().any(|s| s == slug) { slugs.push(slug.to_string()); }
+        let Some(slug) = item.value().attr("href").and_then(|h| post_slug(&origin, h)) else { continue };
+        if !slugs.contains(&slug) { slugs.push(slug); }
     }
     anyhow::ensure!(!slugs.is_empty(), "The site's popularity list is unavailable. Choose Newest and try again later.");
     Ok(slugs)
 }
 
-fn ranked_posts(posts: &[Value], slugs: &[String], category_id: u32) -> Vec<ModSummary> {
+/// The post slug a link on one of the site's own pages points at, or `None` for anything
+/// else: another host, plain http, a login in the URL, a query or fragment, a nested path,
+/// or characters a WordPress slug never has.
+pub(super) fn post_slug(origin: &reqwest::Url, href: &str) -> Option<String> {
+    let url = origin.join(href).ok()?;
+    if url.scheme() != "https" || url.origin() != origin.origin()
+        || !url.username().is_empty() || url.password().is_some()
+        || url.query().is_some() || url.fragment().is_some() {
+        return None;
+    }
+    let slug = url.path().trim_matches('/');
+    if slug.is_empty() || slug.len() > 240
+        || !slug.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'%')) {
+        return None;
+    }
+    Some(slug.to_string())
+}
+
+pub(super) fn ranked_posts(posts: &[Value], slugs: &[String], category_id: u32) -> Vec<ModSummary> {
     let mut by_slug: HashMap<String, ModSummary> = posts.iter()
         // Fail closed if the API ignores the requested category filter.
         .filter(|p| p.get("categories").and_then(Value::as_array)

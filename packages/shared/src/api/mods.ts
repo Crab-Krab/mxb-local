@@ -76,6 +76,12 @@ export const SEARCH_PAGE_SIZE = 24;
 export interface ModCategory {
   id: number;
   label: BaseTKey;
+  /**
+   * Read from a site page that lists newest first and takes no search term (the track
+   * difficulty pages), so Browse offers only Newest under it and drops it while the search
+   * box has text in it, as it does the popular orders.
+   */
+  sitePage?: boolean;
 }
 
 /** A top-level kind of mod, with its filter categories and install folder. */
@@ -184,9 +190,11 @@ export const MOD_TYPES: ModType[] = [
     installSubpath: "mods/tracks",
     categories: [
       { id: 22, label: "browseCat.all" },
-      { id: 300, label: "browseCat.beginner" },
-      { id: 301, label: "browseCat.intermediate" },
-      { id: 302, label: "browseCat.pro" },
+      // No longer WordPress categories: since November 2026 these ids name the site's
+      // /track-difficulty/ pages, which the backend reads instead (`difficulty_page.rs`).
+      { id: 300, label: "browseCat.beginner", sitePage: true },
+      { id: 301, label: "browseCat.intermediate", sitePage: true },
+      { id: 302, label: "browseCat.pro", sitePage: true },
       { id: 119, label: "browseCat.assets" },
     ],
   },
