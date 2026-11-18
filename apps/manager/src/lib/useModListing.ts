@@ -9,6 +9,7 @@ import {
 } from "@frost/shared/api/mods";
 import type { GameId, ModRating, ModSummary } from "@frost/shared/types";
 import { clearListings, listingKey, readListing, writeListing } from "./listingCache";
+import { RatingRequests } from "./ratingRequests";
 import { reportSearchMiss } from "./searchMiss";
 
 /** What one set of filters answered last time, kept by `listingCache`. */
@@ -36,10 +37,10 @@ export function useModListing(modType: ModType, enabled = true, game: GameId = "
   const [sort, setSort] = useState<ModSort>("newest");
   const [mods, setMods] = useState<ModSummary[]>([]);
   const [ratings, setRatings] = useState<Map<number, ModRating>>(new Map());
-  // Ids we've already asked about, so a mod the site had no answer for isn't re-requested
-  // on every render. Kept across a listing switch rather than cleared with it: the same mod
-  // turns up under several of them, and its score is already on screen.
-  const askedForRatings = useRef<Set<number>>(new Set());
+  // Ids asked about or being asked about, so a grid that changes mid-request doesn't ask
+  // twice. Kept across a listing switch rather than cleared with it: the same mod turns up
+  // under several of them, and its score is already on screen.
+  const ratingRequests = useRef(new RatingRequests());
   // Set by `reload`, so the retry button goes to the catalog rather than repainting the
   // cached answer the player just told us was wrong.
   const skipCache = useRef(false);
@@ -146,26 +147,28 @@ export function useModListing(modType: ModType, enabled = true, game: GameId = "
 
   // Scores aren't part of the search response — they come in a second pass keyed by post
   // id, for whatever is on screen. Never awaited by the grid: cards paint immediately and
-  // stars appear a moment later, and a failure just leaves them off.
+  // stars appear a moment later, and a failure just leaves them off until the next grid.
+  //
+  // The answer is kept even if the grid changed while it was out. Scores are keyed by post
+  // id, not by listing, and dropping them is what used to leave older mods such as Farm14
+  // without stars: their ids stayed marked as asked, so nothing asked again.
   useEffect(() => {
     if (!enabled) return;
-    const wanted = mods.map((m) => m.id).filter((id) => !askedForRatings.current.has(id));
+    const requests = ratingRequests.current;
+    const wanted = requests.take(mods.map((m) => m.id));
     if (wanted.length === 0) return;
-    for (const id of wanted) askedForRatings.current.add(id);
-    let cancelled = false;
     getModRatings(wanted)
       .then((res) => {
-        if (cancelled) return;
+        const answered = Object.keys(res).map(Number);
+        requests.settle(wanted, answered);
+        if (answered.length === 0) return;
         setRatings((prev) => {
           const next = new Map(prev);
           for (const [id, rating] of Object.entries(res)) next.set(Number(id), rating);
           return next;
         });
       })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => requests.settle(wanted, []));
   }, [enabled, mods]);
 
   const loadMore = useCallback(async () => {
@@ -187,7 +190,7 @@ export function useModListing(modType: ModType, enabled = true, game: GameId = "
     // Nothing stored is worth painting once the player has asked for it again.
     clearListings();
     skipCache.current = true;
-    askedForRatings.current = new Set();
+    ratingRequests.current.clear();
     setReloadKey((k) => k + 1);
   }, []);
 
