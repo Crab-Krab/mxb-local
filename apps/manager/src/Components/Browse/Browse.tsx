@@ -61,6 +61,7 @@ export default function Browse({
     setCategoryId,
     setSort,
     sortOptions,
+    categoryOptions,
     activeSort,
     mods,
     ratings,
@@ -154,7 +155,7 @@ export default function Browse({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {modType.categories.map((c) => (
+                {categoryOptions.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>
                     {t(c.label)}
                   </SelectItem>

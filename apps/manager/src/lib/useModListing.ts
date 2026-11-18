@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MOD_SORTS,
   SEARCH_PAGE_SIZE,
@@ -33,7 +33,7 @@ interface CachedPage {
 export function useModListing(modType: ModType, enabled = true, game: GameId = "mxb") {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [categoryId, setCategoryId] = useState(modType.categoryId);
+  const [pickedCategoryId, setCategoryId] = useState(modType.categoryId);
   const [sort, setSort] = useState<ModSort>("newest");
   const [mods, setMods] = useState<ModSummary[]>([]);
   const [ratings, setRatings] = useState<Map<number, ModRating>>(new Map());
@@ -59,7 +59,21 @@ export function useModListing(modType: ModType, enabled = true, game: GameId = "
   // term, so they step aside while the box has text in it and the order falls back to
   // newest — the control always names the order actually on screen. The pick itself is
   // kept, so clearing the search puts it back.
-  const sortOptions = MOD_SORTS.filter((s) => !s.noSearch || !debounced);
+  //
+  // The track difficulty filters work the same way: they come from site pages that take no
+  // search term and only list newest first. During a search they step aside for All, and
+  // while one is chosen Newest is the only order offered. Both picks are kept.
+  const categoryOptions = useMemo(
+    () => modType.categories.filter((c) => !c.sitePage || !debounced),
+    [modType, debounced],
+  );
+  const categoryId = categoryOptions.some((c) => c.id === pickedCategoryId)
+    ? pickedCategoryId
+    : modType.categoryId;
+  const newestOnly = modType.categories.some((c) => c.id === categoryId && c.sitePage);
+  const sortOptions = MOD_SORTS.filter(
+    (s) => (!s.noSearch || !debounced) && (!newestOnly || s.value === "newest"),
+  );
   const activeSort = sortOptions.some((s) => s.value === sort) ? sort : "newest";
 
   // The filters that decide what the first page holds. A switch between two of these is
@@ -197,10 +211,14 @@ export function useModListing(modType: ModType, enabled = true, game: GameId = "
   return {
     query,
     setQuery,
+    /** The category on screen, which is All when the pick isn't currently offered. */
     categoryId,
     setCategoryId,
+    /** The categories offered right now: the difficulty ones drop out during a search. */
+    categoryOptions,
     setSort,
-    /** The orders offered right now: the popular ones drop out during a search. */
+    /** The orders offered right now: the popular ones drop out during a search, and only
+     *  Newest is offered under a difficulty filter. */
     sortOptions,
     /** The order on screen, which is `newest` when the pick isn't currently offered. */
     activeSort,
