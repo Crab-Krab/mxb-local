@@ -11,13 +11,13 @@ on:
         description: Run ID of the successful "Build MXB Local for Windows" run
         required: true
       release_tag:
-        description: Tag to publish, for example v0.20.6-local.4
+        description: Tag to publish, for example v1.0.0
         required: true
       installer_sha256:
         description: SHA-256 of the installer, copied from that run's SHA256.txt
         required: true
       security_review:
-        description: Security review file to attach, for example SECURITY-REVIEW-local.4.md
+        description: Security review file to attach, for example SECURITY-REVIEW-1.0.0.md
         required: true
 
 permissions:
