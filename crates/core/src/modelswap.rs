@@ -1520,11 +1520,50 @@ fn move_dir(src: &Path, dst: &Path) -> bool {
     if fs::rename(src, dst).is_ok() {
         return true;
     }
-    if copy_tree(src, dst).is_ok() && fs::remove_dir_all(src).is_ok() {
+    copy_then_remove(src, dst, |dir| fs::remove_dir_all(dir))
+}
+
+/// The fallback half of [`move_dir`], with the removal handed in so a test can make it stop
+/// partway the way a file the game holds open does.
+///
+/// Windows refuses to rename a folder while any file in it is open, which is exactly when
+/// this runs, and the same open file can stop the removal partway. Once the copy is
+/// complete it may be the only whole copy, so it is never deleted while the source is
+/// missing anything: the source is first made whole again from it, and the move reports
+/// failure with everything back where it started.
+fn copy_then_remove(
+    src: &Path,
+    dst: &Path,
+    remove: impl Fn(&Path) -> std::io::Result<()>,
+) -> bool {
+    if copy_tree(src, dst).is_err() {
+        // `dst` didn't exist before, so it holds only our partial copy, and `src` is untouched.
+        let _ = fs::remove_dir_all(dst);
+        return false;
+    }
+    if remove(src).is_ok() {
         return true;
     }
-    let _ = fs::remove_dir_all(dst); // don't leave a half-copied dir behind
+    // Part of the source is gone. Put it back from the copy; only once that worked is the
+    // copy a duplicate that can go. If it didn't, both stay: a duplicate, never a loss.
+    if fill_missing(dst, src).is_ok() {
+        let _ = fs::remove_dir_all(dst);
+    }
     false
+}
+
+/// Copy into `to` every file under `from` that `to` doesn't already have.
+fn fill_missing(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for e in fs::read_dir(from)?.flatten() {
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        if src.is_dir() {
+            fill_missing(&src, &dst)?;
+        } else if !dst.exists() {
+            fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -1678,6 +1717,33 @@ mod tests {
     fn remove_dir(dir: &Path) -> anyhow::Result<()> {
         fs::remove_dir_all(dir)?;
         Ok(())
+    }
+
+    /// A removal that deletes some of the folder and then stops, the way one does on a file
+    /// the game holds open. The copy must not be thrown away while it is the only whole one.
+    #[test]
+    fn a_move_that_stops_partway_loses_nothing() {
+        let root = tmp("move-partway");
+        let src = root.join("src");
+        let dst = root.join("dst");
+        touch(&src.join("model.edf"));
+        touch(&src.join("textures/body.tga"));
+
+        let stops_partway = |dir: &Path| -> std::io::Result<()> {
+            fs::remove_file(dir.join("model.edf"))?;
+            Err(std::io::Error::other("a file is in use"))
+        };
+        assert!(!copy_then_remove(&src, &dst, stops_partway));
+        // Reported as failed, and everything is back where it started.
+        assert!(src.join("model.edf").is_file(), "the removed file was lost");
+        assert!(src.join("textures/body.tga").is_file());
+        assert!(!dst.exists(), "the duplicate copy should be cleaned up once the source is whole");
+
+        // And the ordinary fallback still moves.
+        assert!(copy_then_remove(&src, &dst, |d| fs::remove_dir_all(d)));
+        assert!(dst.join("model.edf").is_file() && dst.join("textures/body.tga").is_file());
+        assert!(!src.exists());
+        let _ = fs::remove_dir_all(&root);
     }
 
     fn tmp(name: &str) -> PathBuf {
