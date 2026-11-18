@@ -600,11 +600,37 @@ pub fn restore_all(cfg: &AppConfig) -> StateOutcome {
         }
     }
 
-    // The shadow tree is scaffolding, not content — once it's empty it shouldn't linger.
-    if out.failed.is_empty() {
-        let _ = fs::remove_dir_all(&shadow);
+    // The shadow tree is scaffolding, not content — once it's empty it shouldn't linger. Only
+    // empty folders go: anything still in there is something this pass didn't recognise or
+    // couldn't move (a file type it doesn't park, a category Manage doesn't govern), and
+    // deleting it would lose the player's file. It stays where they can find it.
+    let left = prune_empty_tree(&shadow);
+    if left > 0 {
+        log::warn!(
+            "[modstate] restore all left {left} item(s) in {} that it didn't recognise",
+            shadow.display()
+        );
     }
     out
+}
+
+/// Remove every empty folder under `dir`, bottom up, and `dir` itself if it ends up empty.
+/// Never removes a file. Returns how many files are left.
+fn prune_empty_tree(dir: &Path) -> usize {
+    let Ok(rd) = fs::read_dir(dir) else { return 0 };
+    let mut files = 0;
+    for e in rd.flatten() {
+        let p = e.path();
+        // `symlink_metadata`, so a link is counted as left behind rather than followed.
+        match fs::symlink_metadata(&p) {
+            Ok(m) if m.is_dir() => files += prune_empty_tree(&p),
+            _ => files += 1,
+        }
+    }
+    if files == 0 {
+        let _ = fs::remove_dir(dir);
+    }
+    files
 }
 
 /// Collect what's parked under `dir` as `mods/…` rel paths. A folder parked whole — an
@@ -774,6 +800,37 @@ mod tests {
         assert_eq!(on.enabled, 1, "{:?}", on.failed);
         assert!(track.is_file());
         assert!(!root.join("mxbapp_disabled").exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Restore all puts back what it recognises and deletes nothing else. Whatever it can't
+    /// place stays in the holding folder for the player to see, instead of going with it.
+    #[test]
+    fn restore_all_never_deletes_what_it_did_not_restore() {
+        let root = tmp("restore-keeps");
+        let track = root.join("mods/tracks/RedBud.pkz");
+        touch(&track);
+        let cfg = cfg_at(&root);
+        let off = set_many(&cfg, &["mods/tracks/RedBud.pkz".into()], false);
+        assert_eq!(off.disabled, 1);
+
+        // Things in the holding folder that Restore all doesn't know how to put back: a file
+        // that isn't an archive or a paint, a folder that isn't a track or a gear model, and
+        // a category outside the folders Manage governs.
+        let notes = root.join("mxbapp_disabled/tracks/notes.txt");
+        let bike = root.join("mxbapp_disabled/bikes/My Bike/bike.edf");
+        let misc = root.join("mxbapp_disabled/misc/thing.pkz");
+        touch(&notes);
+        touch(&bike);
+        touch(&misc);
+
+        let on = restore_all(&cfg);
+        assert_eq!(on.enabled, 1, "{:?}", on.failed);
+        assert!(track.is_file());
+        assert!(notes.is_file(), "an unrecognised file was deleted");
+        assert!(bike.is_file(), "an unrecognised folder was deleted");
+        assert!(misc.is_file(), "a file outside the managed folders was deleted");
 
         let _ = fs::remove_dir_all(&root);
     }
