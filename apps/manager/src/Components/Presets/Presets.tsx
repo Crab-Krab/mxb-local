@@ -101,6 +101,7 @@ import { useGearPaints } from "@frost/shared/lib/useGearPaints";
 import { copyText } from "../../lib/clipboard";
 import { DownloadBar, PRESET_BUNDLE_SLUG, UploadBar } from "../Share/TransferBar";
 import { supportMoment } from "@frost/shared/api/support";
+import { SHARE_SUPPORTED } from "@/lib/localFork";
 
 // Its own chunk: the 3D viewer brings three.js with it, and the list mustn't wait on that.
 const PresetPreview = lazy(() => import("./PresetPreview"));
@@ -469,7 +470,7 @@ export default function Presets({
       </ContextBarLeft>
 
       <ContextBarRight>
-        {mode === "look" && (
+        {SHARE_SUPPORTED && mode === "look" && (
           <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
             <Download className="size-3.5" />
             Import
@@ -906,9 +907,11 @@ function PresetCard({
           <IconBtn title={t("presets.duplicate")} onClick={onDuplicate}>
             <CopyPlus className="size-3.5" />
           </IconBtn>
-          <IconBtn title={t("presets.share")} onClick={onShare}>
-            <Share2 className="size-3.5" />
-          </IconBtn>
+          {SHARE_SUPPORTED && (
+            <IconBtn title={t("presets.share")} onClick={onShare}>
+              <Share2 className="size-3.5" />
+            </IconBtn>
+          )}
           <IconBtn title={t("common.delete")} onClick={onDelete}>
             <Trash2 className="size-3.5" />
           </IconBtn>

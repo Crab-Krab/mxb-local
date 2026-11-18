@@ -11,7 +11,14 @@ import { toast } from "sonner";
 import TopRail from "../Shell/TopRail";
 import { ContextSlots } from "../Shell/ContextBar";
 import PurchaseWatcher from "../Shell/PurchaseWatcher";
-import { isModsView, type DashboardView, type ModsView } from "../Shell/nav";
+import {
+  HOME_VIEW,
+  isModsView,
+  supportedView,
+  type DashboardView,
+  type ModsView,
+} from "../Shell/nav";
+import { ACCOUNT_SUPPORTED, ONLINE_SUPPORTED } from "@/lib/localFork";
 import RetainedView from "../Shell/RetainedView";
 import { parsePluginView, usePlugins } from "@frost/shared/lib/usePlugins";
 import Servers from "../Servers/Servers";
@@ -67,10 +74,9 @@ const Dashboard = ({ welcomeActive = false }: DashboardProps) => {
   const { config, game, games } = useConfig();
   const { integrationChoice } = useFrostmod();
   const t = useT();
-  // Opens on Online. Riding with other people is what the app is opened for most often, and
-  // the server list is the one screen that is worth nothing five minutes later — a mod list
-  // is the same whenever you get to it.
-  const [view, setView] = useState<DashboardView>("servers");
+  // Opens on Online upstream: riding with other people is what that app is opened for most
+  // often. MXB Local has no Online, so it opens on Mods (`HOME_VIEW`).
+  const [view, setView] = useState<DashboardView>(HOME_VIEW);
 
   const showBrowse = useCallback(() => setView("browse"), []);
   const {
@@ -133,7 +139,8 @@ const Dashboard = ({ welcomeActive = false }: DashboardProps) => {
   }, [selectedSlug]);
 
   const navigate = useCallback(
-    (v: DashboardView) => {
+    (to: DashboardView) => {
+      const v = supportedView(to);
       setView(v);
       closeMod();
       if (v !== "settings") setSettingsSection(undefined);
@@ -244,6 +251,8 @@ const Dashboard = ({ welcomeActive = false }: DashboardProps) => {
   useEffect(() => {
     const pending = onDeepLink((link) => {
       if (link.kind === "server") {
+        // Joining a server from the app is part of Online, which this build leaves out.
+        if (!ONLINE_SUPPORTED) return;
         setServerLink({ address: link.address });
         navigate("servers");
         return;
@@ -303,6 +312,7 @@ const Dashboard = ({ welcomeActive = false }: DashboardProps) => {
   const detailActive = builtInsActive && isModsView(view) && Boolean(selectedSlug);
 
   useEffect(() => {
+    if (!ONLINE_SUPPORTED) return;
     void invoke("set_server_browser_active", {
       active: builtInsActive && view === "servers",
     }).catch(() => {});
@@ -332,7 +342,8 @@ const Dashboard = ({ welcomeActive = false }: DashboardProps) => {
           to outlive every view a store link can be clicked from. */}
       <PurchaseWatcher />
       <GameIntegrationConsent paused={welcomeActive} />
-      <SecurePrompt onOpenSettings={openSettingsSection} />
+      {/* Protected purchases need an upstream account, which MXB Local doesn't keep. */}
+      {ACCOUNT_SUPPORTED && <SecurePrompt onOpenSettings={openSettingsSection} />}
       <TopRail
         view={view}
         plugins={plugins}
@@ -356,7 +367,7 @@ const Dashboard = ({ welcomeActive = false }: DashboardProps) => {
           !tourDone ||
           Boolean(release) ||
           mxbmrp3Showing ||
-          !(builtInsActive && view === "servers")
+          !(builtInsActive && view === HOME_VIEW)
         }
       />
       {/* Waits for the intro and the tour so it isn't competing with them for attention,
@@ -406,12 +417,16 @@ const Dashboard = ({ welcomeActive = false }: DashboardProps) => {
               onChangeType={changeType}
             />
           </RetainedView>
-          <RetainedView active={builtInsActive && view === "servers"} slots={ctxSlots}>
-            <Servers link={serverLink} />
-          </RetainedView>
-          <RetainedView active={builtInsActive && view === "ranked"} slots={ctxSlots}>
-            <Ranked onFindServers={() => setView("servers")} />
-          </RetainedView>
+          {ONLINE_SUPPORTED && (
+            <>
+              <RetainedView active={builtInsActive && view === "servers"} slots={ctxSlots}>
+                <Servers link={serverLink} />
+              </RetainedView>
+              <RetainedView active={builtInsActive && view === "ranked"} slots={ctxSlots}>
+                <Ranked onFindServers={() => setView("servers")} />
+              </RetainedView>
+            </>
+          )}
           <RetainedView active={builtInsActive && view === "library"} slots={ctxSlots}>
             <Library
               modType={libraryType}
@@ -422,7 +437,7 @@ const Dashboard = ({ welcomeActive = false }: DashboardProps) => {
               onFocusApplied={clearLibraryFocus}
               onOpenMod={openFoundMod}
               onOpenStore={navigate}
-              onUploadMod={uploadMod}
+              onUploadMod={ACCOUNT_SUPPORTED ? uploadMod : undefined}
             />
           </RetainedView>
           <RetainedView active={builtInsActive && view === "downloads"} slots={ctxSlots}>

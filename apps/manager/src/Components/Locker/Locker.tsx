@@ -69,6 +69,7 @@ import {
   AlertDialogAction,
 } from "@frost/shared/Components/ui/alert-dialog";
 import { GAME_INTEGRATION_SUPPORTED } from "../../lib/localFork";
+import { SHARE_SUPPORTED } from "@/lib/localFork";
 
 /**
  * Locker — the app-side bike **model & sound swap** manager, twinned with FrostMod's
@@ -770,7 +771,8 @@ function VariantButton({
   const { shareFiles } = useShare();
   // An empty set is a state, not a folder — "no model", the game's own model, or the built-in
   // engine sound. There is nothing on disk to hand anyone.
-  const shareable = !v.empty;
+  // Not in MXB Local, which leaves share codes out.
+  const shareable = SHARE_SUPPORTED && !v.empty;
   // A model row named "Stock" is the game's own model, packed in the bike's `.pkz` —
   // reached by clearing the loose set, so it's empty like a "no model" row but means the
   // opposite. Only the wording differs.

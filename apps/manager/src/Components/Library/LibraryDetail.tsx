@@ -52,7 +52,8 @@ interface LibraryDetailProps {
   onReveal: (e: LibraryEntry) => void;
   onUninstall: (e: LibraryEntry) => void;
   onMove: (e: LibraryEntry) => void;
-  onShare: (e: LibraryEntry) => void;
+  /** Absent when this build has no share codes (MXB Local): the button is left out. */
+  onShare?: (e: LibraryEntry) => void;
   onOpenEntry: (e: LibraryEntry) => void;
   /** Re-scan the library — called after a secured file is unlocked here, so it flips to open. */
   onChanged?: () => void;
@@ -400,9 +401,11 @@ export default function LibraryDetail({
             />
             {!isStock && (
               <div className="flex flex-wrap gap-2 pt-0.5">
-                <Button variant="outline" size="sm" onClick={() => onShare(entry)}>
-                  <Share2 className="size-3.5" /> {t("share.share")}
-                </Button>
+                {onShare && (
+                  <Button variant="outline" size="sm" onClick={() => onShare(entry)}>
+                    <Share2 className="size-3.5" /> {t("share.share")}
+                  </Button>
+                )}
                 {canMove && (
                   <Button variant="outline" size="sm" onClick={() => onMove(entry)}>
                     <FolderInput className="size-3.5" /> Move

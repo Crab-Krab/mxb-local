@@ -153,6 +153,7 @@ import {
 } from "@frost/shared/Components/ui/alert-dialog";
 import { SearchBox } from "@frost/shared/Components/ui/search-box";
 import { cn } from "@frost/shared/lib/utils";
+import { SHARE_SUPPORTED } from "@/lib/localFork";
 
 interface RowAction {
   key: string;
@@ -1233,12 +1234,16 @@ export default function Library({
           },
         ]
       : []),
-    {
-      key: "share",
-      icon: Share2,
-      label: t("share.action"),
-      onSelect: () => shareFiles([item.path]),
-    },
+    ...(SHARE_SUPPORTED
+      ? [
+          {
+            key: "share",
+            icon: Share2,
+            label: t("share.action"),
+            onSelect: () => shareFiles([item.path]),
+          },
+        ]
+      : []),
     {
       key: "reveal",
       icon: FolderOpen,
@@ -1481,7 +1486,7 @@ export default function Library({
           onReveal={reveal}
           onUninstall={setUninstallTarget}
           onMove={setMoveTarget}
-          onShare={(e) => shareFiles([e.path])}
+          onShare={SHARE_SUPPORTED ? (e) => shareFiles([e.path]) : undefined}
           onOpenEntry={setDetail}
           onChanged={() => {
             dropScans();
@@ -1547,14 +1552,18 @@ export default function Library({
               <Folder className="size-3.5" />
               {t("import.pickFolder")}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => importShare()}>
-              <ClipboardPaste className="size-3.5" />
-              {t("share.importAction")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => liveShares()}>
-              <Cloud className="size-3.5" />
-              {t("live.action")}
-            </DropdownMenuItem>
+            {SHARE_SUPPORTED && (
+              <>
+                <DropdownMenuItem onSelect={() => importShare()}>
+                  <ClipboardPaste className="size-3.5" />
+                  {t("share.importAction")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => liveShares()}>
+                  <Cloud className="size-3.5" />
+                  {t("live.action")}
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setShowRemoved((v) => !v)}>
               <History className="size-3.5" />
@@ -1935,14 +1944,16 @@ export default function Library({
             {t("browse.selectedCount", { count: selected.size })}
           </span>
           <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={selected.size === 0 || busy}
-              onClick={() => shareFiles(selectedEntries.map((e) => e.path))}
-            >
-              <Share2 className="size-3.5" /> {t("share.share")}
-            </Button>
+            {SHARE_SUPPORTED && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selected.size === 0 || busy}
+                onClick={() => shareFiles(selectedEntries.map((e) => e.path))}
+              >
+                <Share2 className="size-3.5" /> {t("share.share")}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

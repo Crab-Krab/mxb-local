@@ -12,6 +12,7 @@ import { RAIL, railItemFor, type DashboardView, type RailItem } from "./nav";
 import DownloadQueue from "./DownloadQueue";
 import FrostmodBadge from "./FrostmodBadge";
 import QueueBanner from "./QueueBanner";
+import { ONLINE_SUPPORTED } from "@/lib/localFork";
 import ContextBar from "./ContextBar";
 import AppBar from "@frost/shared/Components/Shell/AppBar";
 
@@ -113,7 +114,8 @@ export default function TopRail({ view, plugins, onNavigate, leftRef, rightRef }
               carried this on every screen and the rail has to as well: its state changes
               while you are somewhere else, and Settings is four screens away. */}
           {/* The server line, visible on every tab: the turn can come while you're elsewhere. */}
-          <QueueBanner />
+          {/* The queue for a full server is part of Online, which this build leaves out. */}
+          {ONLINE_SUPPORTED && <QueueBanner />}
           <FrostmodBadge />
           <DownloadQueue onOpenDownloads={() => onNavigate("downloads")} />
         </>

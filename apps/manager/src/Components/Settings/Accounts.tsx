@@ -51,6 +51,7 @@ import {
   writeStoreCount,
 } from "@/lib/autoInstall";
 import { useSteamLink } from "@/lib/useSteamLink";
+import { ACCOUNT_SUPPORTED } from "@/lib/localFork";
 import { useT } from "@/i18n";
 import SupporterBadge from "@frost/shared/Components/Supporter/SupporterBadge";
 import { hasLooks, recheckSupporter, useSupporter } from "@frost/shared/api/supporter";
@@ -94,9 +95,12 @@ export default function Accounts() {
 
   useEffect(() => {
     let cancelled = false;
-    steamLinkStatus()
-      .then((id) => !cancelled && setSteamId(id))
-      .catch(() => {});
+    // The Steam link lives on the upstream account, which MXB Local doesn't keep.
+    if (ACCOUNT_SUPPORTED) {
+      steamLinkStatus()
+        .then((id) => !cancelled && setSteamId(id))
+        .catch(() => {});
+    }
     shopStatus()
       .then((ok) => !cancelled && setShopIn(ok))
       .catch(() => !cancelled && setShopIn(false));
@@ -219,32 +223,35 @@ export default function Accounts() {
 
   return (
     <div className="flex flex-col gap-1">
-      <Row
-        icon={<ShieldCheck className="size-4" />}
-        tone={steamId ? "on" : "off"}
-        name={t("accounts.steam")}
-        badge={supporter && steamId ? <SupporterBadge /> : undefined}
-        status={
-          steamId ? t("settings.steamLinkedAs", { id: steamId }) : t("accounts.steamNot")
-        }
-        note={t("accounts.steamWhat")}
-      >
-        <Button
-          size="sm"
-          variant={steamId ? "outline" : "default"}
-          disabled={linking}
-          onClick={() => void linkSteam()}
+      {/* The Steam link lives on the upstream account, which MXB Local doesn't keep. */}
+      {ACCOUNT_SUPPORTED && (
+        <Row
+          icon={<ShieldCheck className="size-4" />}
+          tone={steamId ? "on" : "off"}
+          name={t("accounts.steam")}
+          badge={supporter && steamId ? <SupporterBadge /> : undefined}
+          status={
+            steamId ? t("settings.steamLinkedAs", { id: steamId }) : t("accounts.steamNot")
+          }
+          note={t("accounts.steamWhat")}
         >
-          {linking
-            ? t("settings.steamLinking")
-            : steamId
-              ? t("settings.steamRelink")
-              : t("settings.steamLinkBtn")}
-        </Button>
-      </Row>
+          <Button
+            size="sm"
+            variant={steamId ? "outline" : "default"}
+            disabled={linking}
+            onClick={() => void linkSteam()}
+          >
+            {linking
+              ? t("settings.steamLinking")
+              : steamId
+                ? t("settings.steamRelink")
+                : t("settings.steamLinkBtn")}
+          </Button>
+        </Row>
+      )}
       {/* The Style Pack, bought here, and the Supporter badge, from a Buy Me a Coffee membership
           once its email is linked. Both need the Steam link, since they are kept by Steam id. */}
-      {steamId && (!looks || !supporter) && (
+      {ACCOUNT_SUPPORTED && steamId && (!looks || !supporter) && (
         <div className="flex flex-col gap-2 pb-2 pl-12">
           {!looks && <SupporterBuy />}
           {!supporter && <SupporterEmailLink />}

@@ -131,7 +131,12 @@ import {
   type DownloadPrefs,
 } from "@frost/shared/lib/downloadPrefs";
 import { useFrostmod } from "../../Context/FrostmodContext";
-import { GAME_INTEGRATION_SUPPORTED } from "../../lib/localFork";
+import {
+  ACCOUNT_SUPPORTED,
+  GAME_INTEGRATION_SUPPORTED,
+  ONLINE_SUPPORTED,
+  SHARE_SUPPORTED,
+} from "../../lib/localFork";
 import { formatBytes, formatDateShort } from "@frost/shared/lib/mods";
 import { copyText } from "../../lib/clipboard";
 import { UploadBar } from "../Share/TransferBar";
@@ -337,7 +342,7 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
       (s) =>
         ((s.id !== "frostmod" && s.id !== "paintsync") || (hasFrostmod && caps.frostmod)) &&
         (s.id !== "game" || multiGame) &&
-        (s.id !== "secure" || secureAvailable),
+        (s.id !== "secure" || (secureAvailable && ACCOUNT_SUPPORTED)),
     ),
   })).filter((g) => g.sections.length > 0);
   const primaryGroups = groups.filter((g) => !g.advanced);
@@ -916,12 +921,15 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
     getVersion().then(setVersion).catch(() => setVersion(""));
     experimentalStateApi().then(setExperimentalState).catch(() => {});
     contentSecureAvailable().then(setSecureAvailable).catch(() => {});
-    steamLinkStatus().then(setLinkedSteam).catch(() => {});
-    // Opening Settings is a natural "check now": try any owned-but-locked file, then read the
-    // list back so a freshly unlocked one shows as Unlocked.
-    void mxbsecureAutoUnlock()
-      .catch(() => 0)
-      .then(() => mxbsecureStatus().then(setSecureItems).catch(() => {}));
+    // Protected purchases and the Steam link need an upstream account (not in MXB Local).
+    if (ACCOUNT_SUPPORTED) {
+      steamLinkStatus().then(setLinkedSteam).catch(() => {});
+      // Opening Settings is a natural "check now": try any owned-but-locked file, then read
+      // the list back so a freshly unlocked one shows as Unlocked.
+      void mxbsecureAutoUnlock()
+        .catch(() => 0)
+        .then(() => mxbsecureStatus().then(setSecureItems).catch(() => {}));
+    }
     // Re-check FrostMod against GitHub whenever Settings opens — the provider
     // only fetches once at launch, so this catches releases cut since then.
     void refreshStatus();
@@ -1478,13 +1486,16 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
             )}
             {/* Closing the game for a server turn sits here rather than with the queue:
                 it is the app deciding it may shut the game down, which is the same kind of
-                permission as launching at startup. */}
-            <ToggleRow
-              label={t("settings.queueRestartGame")}
-              desc={t("settings.queueRestartGameDesc")}
-              checked={queueRestartGame}
-              onChange={toggleQueueRestartGame}
-            />
+                permission as launching at startup. The queue is part of Online, which MXB
+                Local leaves out. */}
+            {ONLINE_SUPPORTED && (
+              <ToggleRow
+                label={t("settings.queueRestartGame")}
+                desc={t("settings.queueRestartGameDesc")}
+                checked={queueRestartGame}
+                onChange={toggleQueueRestartGame}
+              />
+            )}
           </Section>
           )}
 
@@ -2328,20 +2339,23 @@ export default function Settings({ initialSection, onShowWhatsNew }: SettingsPro
                 {exportingLogs ? t("logs.saving") : t("logs.save")}
               </Button>
               {/* The same zip, uploaded — for the far more common case where the logs are
-                  wanted by someone who isn't sitting at this machine. */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={shareLogsNow}
-                disabled={exportingLogs || !!sharingLogs}
-              >
-                {sharingLogs ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Share2 className="size-3.5" />
-                )}
-                {sharingLogs || t("logs.share")}
-              </Button>
+                  wanted by someone who isn't sitting at this machine. Left out of MXB Local,
+                  which uploads nothing to a file host: Save logs above writes the same zip. */}
+              {SHARE_SUPPORTED && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={shareLogsNow}
+                  disabled={exportingLogs || !!sharingLogs}
+                >
+                  {sharingLogs ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Share2 className="size-3.5" />
+                  )}
+                  {sharingLogs || t("logs.share")}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"

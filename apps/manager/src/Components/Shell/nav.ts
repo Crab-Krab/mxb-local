@@ -1,5 +1,6 @@
 import type { GameCaps } from "@frost/shared/types";
 import type { TKey } from "@/i18n";
+import { ACCOUNT_SUPPORTED, ONLINE_SUPPORTED } from "@/lib/localFork";
 
 /**
  * A page in the shell. The template literal is how a plugin gets a nav row: its panels are
@@ -70,6 +71,32 @@ export function isModsView(view: DashboardView): view is ModsView {
   return (MODS_VIEWS as readonly string[]).includes(view);
 }
 
+/** Online upstream: the server browser and Ranked. Not offered in MXB Local. */
+const ONLINE_ITEM: RailItem = {
+  id: "servers",
+  // The rail says Online: it is where riding with other people lives, and the screen
+  // under it is a server browser plus Ranked, not servers alone.
+  label: "nav.servers",
+  view: "servers",
+  tabs: [
+    { view: "servers", label: "nav.serverBrowser" },
+    { view: "ranked", label: "nav.ranked" },
+  ],
+};
+
+/** Where the app opens: Online upstream, Mods in MXB Local, which has no Online. */
+export const HOME_VIEW: DashboardView = ONLINE_SUPPORTED ? "servers" : "browse";
+
+/**
+ * The view to show for `view` in this build. A view this fork hides (Online, Ranked, My mods)
+ * lands on the screen that took its place, so an old link or a stale button can't open it.
+ */
+export function supportedView(view: DashboardView): DashboardView {
+  if (!ONLINE_SUPPORTED && (view === "servers" || view === "ranked")) return HOME_VIEW;
+  if (!ACCOUNT_SUPPORTED && view === "mymods") return "library";
+  return view;
+}
+
 /**
  * The rail, left to right.
  *
@@ -80,17 +107,7 @@ export function isModsView(view: DashboardView): view is ModsView {
  * the same reason: they all decide what you take onto the track.
  */
 export const RAIL: RailItem[] = [
-  {
-    id: "servers",
-    // The rail says Online: it is where riding with other people lives, and the screen
-    // under it is a server browser plus Ranked, not servers alone.
-    label: "nav.servers",
-    view: "servers",
-    tabs: [
-      { view: "servers", label: "nav.serverBrowser" },
-      { view: "ranked", label: "nav.ranked" },
-    ],
-  },
+  ...(ONLINE_SUPPORTED ? [ONLINE_ITEM] : []),
   // Never capability-gated: mxb-mods works for every title, and the two stores are what the
   // screen's own source filter hides when `caps.shop` is off.
   { id: "mods", label: "nav.mods", view: "browse", owns: ["shop", "hub"] },
@@ -102,7 +119,7 @@ export const RAIL: RailItem[] = [
       { view: "library", label: "nav.library" },
       { view: "downloads", label: "nav.downloads" },
       { view: "storage", label: "nav.storage" },
-      { view: "mymods", label: "nav.myMods" },
+      ...(ACCOUNT_SUPPORTED ? [{ view: "mymods" as const, label: "nav.myMods" as const }] : []),
     ],
   },
   {

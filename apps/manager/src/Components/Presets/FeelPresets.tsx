@@ -51,6 +51,7 @@ import FeelEditor, { controlLabel } from "./FeelEditor";
 import { copyName } from "@frost/shared/lib/presets";
 import { useT } from "@/i18n";
 import { copyText } from "../../lib/clipboard";
+import { SHARE_SUPPORTED } from "@/lib/localFork";
 
 /** How many settings and how many controls a preset carries. */
 function summarise(feel: Feel) {
@@ -233,10 +234,12 @@ export default function FeelPresets({ profiles, profile, onProfile }: Props) {
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
           {t("feel.save")}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-          <Download className="size-3.5" />
-          {t("feel.import")}
-        </Button>
+        {SHARE_SUPPORTED && (
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <Download className="size-3.5" />
+            {t("feel.import")}
+          </Button>
+        )}
       </div>
 
       {/* Saved list */}
@@ -273,9 +276,11 @@ export default function FeelPresets({ profiles, profile, onProfile }: Props) {
                   <IconBtn title={t("presets.duplicate")} onClick={() => void duplicate(feel)}>
                     <CopyPlus className="size-3.5" />
                   </IconBtn>
-                  <IconBtn title={t("feel.share")} onClick={() => void openShare(feel)}>
-                    <Share2 className="size-3.5" />
-                  </IconBtn>
+                  {SHARE_SUPPORTED && (
+                    <IconBtn title={t("feel.share")} onClick={() => void openShare(feel)}>
+                      <Share2 className="size-3.5" />
+                    </IconBtn>
+                  )}
                   <IconBtn title={t("common.delete")} onClick={() => void remove(feel)}>
                     <Trash2 className="size-3.5" />
                   </IconBtn>

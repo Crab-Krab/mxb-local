@@ -10,6 +10,7 @@ import {
 } from "react";
 import { ShareDialog, ImportShareDialog } from "../Components/Share/ShareDialogs";
 import { LiveSharesDialog } from "../Components/Share/LiveShares";
+import { SHARE_SUPPORTED } from "@/lib/localFork";
 
 /**
  * Sharing installed files, and the one place that owns its two dialogs.
@@ -89,6 +90,8 @@ export function ShareProvider({
    * left alone, which is also what keeps this from fighting the import dialog's own box.
    */
   useEffect(() => {
+    // MXB Local leaves share codes out, so a pasted one is just text.
+    if (!SHARE_SUPPORTED) return;
     const onPaste = (e: ClipboardEvent) => {
       if (isEditable(e.target)) return;
       const code = e.clipboardData?.getData("text")?.match(CODE_PATTERN)?.[0];

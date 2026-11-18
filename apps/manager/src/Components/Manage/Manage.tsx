@@ -58,6 +58,7 @@ import { displayName, formatBytes } from "@frost/shared/lib/mods";
 import { CATEGORY_LABEL, categoryIcon } from "../Library/categories";
 import { useShare } from "../../Context/Share";
 import { ContentDialog } from "./ContentDialog";
+import { SHARE_SUPPORTED } from "@/lib/localFork";
 
 type Tab = "race" | "mods";
 
@@ -703,15 +704,17 @@ function ModsPanel({
                       .filter(Boolean)
                       .join(" · ")}
                   </span>
-                  <button
-                    disabled={busy}
-                    onClick={() => shareFiles([m.rel])}
-                    title={t("share.action")}
-                    aria-label={t("share.action")}
-                    className="ml-auto flex-none cursor-default rounded-md p-1 text-faint transition-colors hover:bg-foreground/[0.06] hover:text-primary disabled:opacity-40"
-                  >
-                    <Share2 className="size-3.5" />
-                  </button>
+                  {SHARE_SUPPORTED && (
+                    <button
+                      disabled={busy}
+                      onClick={() => shareFiles([m.rel])}
+                      title={t("share.action")}
+                      aria-label={t("share.action")}
+                      className="ml-auto flex-none cursor-default rounded-md p-1 text-faint transition-colors hover:bg-foreground/[0.06] hover:text-primary disabled:opacity-40"
+                    >
+                      <Share2 className="size-3.5" />
+                    </button>
+                  )}
                   <button
                     disabled={busy}
                     onClick={() => onDelete(m)}
