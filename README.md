@@ -2,9 +2,9 @@
 
 An independent fork of [Frostn1/mxb-app](https://github.com/Frostn1/mxb-app), focused on security, privacy and Windows setup fixes.
 
-**[Download for Windows](https://github.com/Crab-Krab/mxb-local/releases/download/v0.20.6-local.5/MXB.Local_0.20.6-local.5_x64-setup.exe)** · [Latest release](https://github.com/Crab-Krab/mxb-local/releases/latest) · [Security review](SECURITY-REVIEW-local.5.md)
+**[Download for Windows](https://github.com/Crab-Krab/mxb-local/releases/download/v1.0.0/MXB.Local_1.0.0_x64-setup.exe)** · [Latest release](https://github.com/Crab-Krab/mxb-local/releases/latest) · [Security review](SECURITY-REVIEW-1.0.0.md)
 
-Windows x64 (Windows 10 or later) · Current version: **0.20.6-local.5**
+Windows x64 (Windows 10 or later) · Current version: **1.0.0**
 
 ## Changes in this fork
 
@@ -21,10 +21,12 @@ Windows x64 (Windows 10 or later) · Current version: **0.20.6-local.5**
 - Archives that would unpack to an unreasonable size are refused instead of filling your disk.
 - Fixed first-run setup completion for automatically detected and manually selected folders.
 - Restored mxb-mods popularity browsing and clarified empty category results.
+- Track difficulty filters (Beginner, Intermediate, Pro) read from the site's difficulty pages, and star ratings shown on every mod that has them.
+- Fixes from upstream v0.20.7 to v0.20.11, rewritten for this fork from upstream's release notes, since that source is not public.
 
 MXB Local uses its own settings folder, separate from the original app. Some private upstream integrations are unavailable, and online features depend on their external services.
 
-The Windows installer is **unsigned**. Each release build carries a GitHub attestation, so you can check an installer came from this repository's build with `gh attestation verify <installer> --repo Crab-Krab/mxb-local`. See the [security review](SECURITY-REVIEW-local.5.md) for the scope of the checks, dependency findings and remaining limitations.
+The Windows installer is **unsigned**. Each release build carries a GitHub attestation, so you can check an installer came from this repository's build with `gh attestation verify <installer> --repo Crab-Krab/mxb-local`. See the [security review](SECURITY-REVIEW-1.0.0.md) for the scope of the checks, dependency findings and remaining limitations.
 
 ## Getting started
 
@@ -32,7 +34,7 @@ The Windows installer is **unsigned**. Each release build carries a GitHub attes
 
 1. Make sure MX Bikes is installed on your PC.
 2. Download the **Windows installer** using the link above.
-3. Open `MXB.Local_0.20.6-local.5_x64-setup.exe` and follow the installation wizard.
+3. Open `MXB.Local_1.0.0_x64-setup.exe` and follow the installation wizard.
 4. Launch **MXB Local** and choose **MX Bikes** on the setup screen.
 5. Let the app detect your folders automatically. If prompted, select the requested folders, then start browsing mods.
 
@@ -52,10 +54,16 @@ For **mxb-mods**, **Most popular** uses the site's top 100 overall, filtered to 
 
 Choose **Newest** or **Oldest** to browse the full category.
 
+The **Beginner**, **Intermediate** and **Pro** track filters come from the site's difficulty pages, which list newest first only. A search covers all tracks.
+
+## Version numbers
+
+From 1.0.0, MXB Local has its own version numbers. Earlier releases were numbered after the upstream version they started from (0.20.6-local.1 to 0.20.6-local.5). 1.0.0 follows 0.20.6-local.5 and installs over it.
+
 ## Documentation
 
 - [Fork details and build instructions](LOCAL-FORK.md)
-- [Security review](SECURITY-REVIEW-local.5.md)
+- [Security review](SECURITY-REVIEW-1.0.0.md)
 - [What the app contacts](docs/privacy-local.md)
 - [Build and test results](https://github.com/Crab-Krab/mxb-local/actions/workflows/build-local-windows.yml)
 - [Original project documentation](README.upstream.md)

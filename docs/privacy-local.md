@@ -1,6 +1,6 @@
 # MXB Local: what the app contacts
 
-Applies to 0.20.6-local.5 and later. In local.3 and earlier, the startup request, the
+Applies to 0.20.6-local.5, 1.0.0 and later. In local.3 and earlier, the startup request, the
 server-list upload and the supporters fetch listed under "Never" below still happen.
 
 **Correction for local.4.** local.4 still asks GitHub (`api.github.com`) for the latest

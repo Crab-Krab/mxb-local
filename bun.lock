@@ -16,7 +16,7 @@
     },
     "apps/manager": {
       "name": "@frost/manager",
-      "version": "0.20.6-local.5",
+      "version": "1.0.0",
       "dependencies": {
         "@frost/shared": "*",
         "@radix-ui/react-alert-dialog": "^1.1.19",

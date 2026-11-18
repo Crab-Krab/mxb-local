@@ -3,7 +3,7 @@
 This is an independent Windows build of Frostn1/mxb-app v0.20.6. It keeps the
 upstream MIT license and attribution. It is not an official Frost/mxbsecure release.
 
-**Build status: local.5 changes passed the full Windows build: every Rust and frontend
+**Build status: 1.0.0 changes passed the full Windows build: every Rust and frontend
 test, typecheck, lint, both browser test suites, the Visual C++ runtime import check and
 installer packaging. It has not been installed and launched on a clean Windows PC, and
 DPAPI recovery has not been exercised on a real profile.**
@@ -28,6 +28,27 @@ DPAPI recovery has not been exercised on a real profile.**
   available. Closing the app exits it by default.
 - Name: **MXB Local**. Settings: `%LOCALAPPDATA%\local.mxb.manager`.
   It does not import or overwrite the original app's settings or cookies.
+
+## Changes in 1.0.0
+
+- Own version numbers from here on. 1.0.0 follows 0.20.6-local.5. The app identifier,
+  settings folder and installer are unchanged, so it installs as an upgrade.
+- Fixes from upstream v0.20.7 to v0.20.11, rewritten from upstream's release notes, since
+  every upstream tag from v0.20.7 on points at the v0.20.6 source:
+  - A numbered track no longer matches its predecessor (Walnut 2 is not Walnut or
+    Walnut 1), in installed badges and in server-to-track matching.
+  - Track `.ini` grid counts written as decimals (`1025.0`) are read.
+  - Restore all prunes only empty folders instead of deleting the disabled-mods tree.
+  - A model swap move that stops partway keeps a complete copy of every file.
+  - Unwrapping looks past previews and documents beside a wrapper, category folders are
+    checked at every unwrap level, and an unwrapped track keeps its folder name.
+  - The installed-mods scan runs off the main thread, and install progress is throttled
+    to one event per 100 ms.
+- Star ratings that arrive after the grid changes are kept, and unanswered ones are asked
+  for again.
+- The Beginner, Intermediate and Pro track filters read the site's
+  `/track-difficulty/{level}/` pages (`mods/mxb/difficulty_page.rs`). They offer Newest
+  only and step aside for All during a search.
 
 ## Changes in local.5
 
@@ -93,7 +114,7 @@ Work from the November 2026 technical audit.
   links and oversized pages are rejected. Category metadata and pagination are
   checked, and cached results avoid repeated ranking requests while paging.
 
-See [the local.5 dependency review](SECURITY-REVIEW-local.5.md) for the raw-scan
+See [the 1.0.0 dependency review](SECURITY-REVIEW-1.0.0.md) for the raw-scan
 interpretation, affected-API analysis and remaining maintenance concerns.
 
 ## Features and limits
